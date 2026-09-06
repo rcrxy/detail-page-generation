@@ -1,11 +1,12 @@
 ---
 name: detail-page-generation
 description: >
-    Create progressive visual-reference prototypes for Taobao/e-commerce product
-    detail pages from partial product information, supplied image folders, and
-    optional reference images. Use this skill when the user wants a fixed-width
-    1500 px, mobile-oriented HTML/CSS detail-page concept for later manual PSD
-    recreation or refinement.
+  Create, refine, review, or hand off progressive visual-reference prototypes
+  for Taobao/e-commerce product detail pages from partial product information,
+  supplied image folders, and optional references. Use this skill for 1500 px
+  mobile-oriented HTML/CSS detail-page concepts, editable Photoshop handoff,
+  or auditing and improving the bundled html-to-ps conversion tool and its
+  boundaries.
 ---
 
 # Taobao Detail Reference
@@ -33,7 +34,23 @@ Favor strong product communication, clear hierarchy, coherent art direction,
 appropriate information density, mobile readability, and layouts that are
 practical to recreate in PSD.
 
-## Hard constraints
+## Creative freedom
+
+Preserve broad visual and compositional freedom by default.
+
+Use any suitable art direction, typography, layout system, layering, imagery,
+decoration, effects, masks, gradients, transforms, or visual rhythm that helps
+communicate the product while respecting the essential constraints below.
+
+Conversion capability must adapt to the approved design. Do not omit, replace,
+or simplify a visual idea merely because the current Photoshop handoff tool
+cannot reconstruct it natively. Preserve it through the smallest practical
+local fallback and improve the converter when possible.
+
+Treat semantic handoff attributes and implementation conventions as optional
+technical aids, not as a required design grammar.
+
+## Essential constraints
 
 ### Preserve the real product
 
@@ -116,55 +133,24 @@ As a practical default on the 1500 px canvas:
 These are readability baselines, not a mandatory typography system. Larger type
 is encouraged whenever the composition benefits from it.
 
-For text that is intended to remain on one line, do not set CSS `width` or
-`height` merely for positioning or alignment. Let the text element use its
-natural content size. Use `left`, `right`, transforms, or the parent layout to
-position it instead.
+Choose text width, wrapping, line breaks, transforms, font faces, and other
+typographic treatments according to the composition. Do not change them merely
+to obtain a preferred Photoshop text-layer type. The converter should infer or
+locally preserve the rendered result.
 
-Add `width` to a text element only when wrapping within that width is part of
-the intended composition. Add `height` only when a fixed text-box height has a
-real layout purpose. This keeps short headings, labels, numbering, and captions
-suitable for editable Photoshop point-text handoff.
+### Implementation choice
 
-### Font face selection
+Use plain **HTML + CSS** as the efficient default implementation.
 
-Do not use the CSS `font-weight` property in generated prototype styles.
+JavaScript or a frontend framework may be used when it materially improves the
+visual concept, interaction, iteration workflow, or a user-requested outcome.
+The rendered design remains the handoff source of truth.
 
-When a heavier or lighter text appearance is needed, select an explicit font
-face/family such as the font's Bold, Heavy, Black, Medium, Light, or other named
-face through `font-family` instead of synthesizing weight with CSS.
-
-For handoff-oriented prototypes, prefer fixed typographic dimensions in `px`
-where practical so the browser result can be transferred to Photoshop at
-72 PPI with a direct pixel-based geometry reference.
-
-The Photoshop handoff script must preserve the requested font choice and must
-not decide to substitute, rasterize, or convert text because a font is missing.
-Those decisions belong to Photoshop and the designer after handoff.
-
-### Keep implementation lightweight
-
-Use plain **HTML + CSS** as the primary implementation.
-
-JavaScript may be used only when it materially helps the prototype.
-
-Do not use React, Vue, or another frontend framework unless the user explicitly
-asks for one.
-
-### Embed authored CSS in the HTML
-
-Put all CSS authored for the prototype in one or more `<style>` elements inside
-the HTML document.
-
-Do not create or load external stylesheet files. In particular:
-
-- do not use `<link rel="stylesheet">` for prototype styles;
-- do not use CSS `@import`;
-- do not move prototype rules into a separate `.css` file.
-
-External image and font assets may still be referenced when needed. This rule
-applies to stylesheets so the html-to-ps extractor can inspect authored CSS
-rules reliably through the document CSSOM.
+Do not impose html-to-ps packaging conventions during ordinary visual design.
+When editable handoff is actually requested, read the current tool README and
+apply only technical packaging changes that preserve the rendered result. If a
+tool requirement conflicts with the approved design, improve the converter or
+use a local fallback instead of reducing the design.
 
 ## Progressive work
 
@@ -324,5 +310,29 @@ When the user asks for an **editable PSD handoff** of a finished design, use the
 optional `tools/html-to-ps` pipeline (see `references/html-to-ps.md`).
 
 Never reduce or change the visual design to make conversion easier; the pipeline
-degrades locally instead. Conversion rules live only in `tools/html-to-ps/` and
-`scene-schema.json` — do not copy them here.
+degrades locally instead. Current conversion behavior and boundaries live in
+`tools/html-to-ps/README.md` and `tools/html-to-ps/scene-schema.json`; do not
+copy their changing implementation details here.
+
+## html-to-ps audit and maintenance
+
+When reviewing conversion quality, tool boundaries, or a reported handoff
+problem:
+
+1. Read the tool's current known boundaries.
+2. Inspect the actual extractor and JSX generator code before accepting a
+  documented workaround as necessary.
+3. Fix conversion behavior first in `tools/html-to-ps/src` whenever practical.
+4. Update the scene schema and tool README to match the implemented behavior.
+5. Update other reference files only when their stable handoff guidance changed.
+6. Change this `SKILL.md` last, and only for stable workflow or target
+  conditions rather than temporary converter limitations.
+
+Do not solve a conversion defect by adding a new authoring prohibition unless
+it is an unavoidable target condition. Prefer native editable reconstruction,
+then the smallest isolated local fallback, and only then a contextual warning
+or skipped node.
+
+When the user limits verification scope, follow that scope. Source inspection
+and editor diagnostics may be used without running conversion, packaging, or
+test commands.

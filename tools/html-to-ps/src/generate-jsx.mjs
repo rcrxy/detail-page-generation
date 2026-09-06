@@ -642,8 +642,8 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
             ];
 
             try {
-                item.width = px(Math.max(1, Number(node.bounds.width)));
-                item.height = px(Math.max(1, Number(node.bounds.height)));
+                item.width = px(Math.max(1, Number(node.layoutWidth || node.bounds.width)));
+                item.height = px(Math.max(1, Number(node.layoutHeight || node.bounds.height)));
             } catch (boxError) {
                 warn(
                     nodeContext(node, sectionName) +
@@ -687,12 +687,71 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
             }
         }
 
+        var textScaleX = Number(node.scaleX == null ? 1 : node.scaleX);
+        var textScaleY = Number(node.scaleY == null ? 1 : node.scaleY);
+        var textRotation = Number(node.rotation || 0);
+        if (
+            Math.abs(textScaleX - 1) > 0.001 ||
+            Math.abs(textScaleY - 1) > 0.001
+        ) {
+            try {
+                layer.resize(
+                    Math.max(0.01, textScaleX) * 100,
+                    Math.max(0.01, textScaleY) * 100,
+                    AnchorPosition.MIDDLECENTER
+                );
+            } catch (scaleError) {
+                warn(
+                    nodeContext(node, sectionName) +
+                    " Could not apply text transform scale to '" + layer.name + "': " +
+                    safeMessage(scaleError)
+                );
+            }
+        }
+
+        if (Math.abs(textRotation) > 0.001) {
+            try {
+                layer.rotate(textRotation, AnchorPosition.MIDDLECENTER);
+            } catch (rotationError) {
+                warn(
+                    nodeContext(node, sectionName) +
+                    " Could not apply text rotation to '" + layer.name + "': " +
+                    safeMessage(rotationError)
+                );
+            }
+        }
+
+        if (
+            Math.abs(textScaleX - 1) > 0.001 ||
+            Math.abs(textScaleY - 1) > 0.001 ||
+            Math.abs(textRotation) > 0.001
+        ) {
+            try {
+                var transformedCenter = centerOfBounds(layer);
+                var browserCenterX = Number(node.bounds.x) + Number(node.bounds.width) / 2;
+                var browserCenterY = Number(node.bounds.y) + Number(node.bounds.height) / 2;
+                layer.translate(
+                    px(browserCenterX - transformedCenter.x),
+                    px(browserCenterY - transformedCenter.y)
+                );
+            } catch (transformPositionError) {
+                warn(
+                    nodeContext(node, sectionName) +
+                    " Could not align transformed text '" + layer.name + "': " +
+                    safeMessage(transformPositionError)
+                );
+            }
+        }
+
         try {
+            var colorOpacity = text.color && text.color.a != null
+                ? Number(text.color.a)
+                : 1;
             layer.opacity = Math.max(
                 0,
                 Math.min(
                     100,
-                    Number(node.opacity == null ? 1 : node.opacity) * 100
+                    Number(node.opacity == null ? 1 : node.opacity) * colorOpacity * 100
                 )
             );
         } catch (opacityError) {
@@ -751,6 +810,19 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
                     " Group creation failed; children will be created in the parent group. " +
                     safeMessage(groupError)
                 );
+            }
+            if (group) {
+                try {
+                group.opacity = Math.max(
+                    0,
+                    Math.min(100, Number(node.opacity == null ? 1 : node.opacity) * 100)
+                );
+                } catch (groupOpacityError) {
+                    warn(
+                    nodeContext(node, sectionName) +
+                        " Could not apply group opacity: " + safeMessage(groupOpacityError)
+                    );
+                }
             }
             for (var i = 0; i < children.length; i++) {
                 // createNode is the mandatory isolation boundary. It never lets

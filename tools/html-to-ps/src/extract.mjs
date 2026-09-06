@@ -114,6 +114,117 @@ function nodeLocation(node, section) {
     return `section "${sectionLabel}" / element "${elementLabel}" / id "${id}" / type "${type}"`;
 }
 
+async function prepareRasterCapture(page, node) {
+    await page.evaluate(
+        ({ domId, captureMode }) => {
+            const stateKey = "__htmlToPsRasterCaptureState";
+            if (window[stateKey]) {
+                throw new Error("A previous raster capture was not restored.");
+            }
+
+            const target = Array.from(document.querySelectorAll("[data-ps-node-id]")).find(
+                element => element.getAttribute("data-ps-node-id") === domId,
+            );
+            if (!target) throw new Error(`Raster capture target ${domId} was not found.`);
+
+            const state = {
+                attributes: [],
+                textNodes: [],
+                style: null,
+            };
+            window[stateKey] = state;
+
+            function mark(element, attribute, value = "") {
+                state.attributes.push({
+                    element,
+                    attribute,
+                    hadAttribute: element.hasAttribute(attribute),
+                    value: element.getAttribute(attribute),
+                });
+                element.setAttribute(attribute, value);
+            }
+
+            for (const element of Array.from(document.querySelectorAll("body *"))) {
+                if (element === target || element.contains(target) || target.contains(element)) continue;
+                mark(element, "data-html-to-ps-capture-hidden");
+            }
+
+            let ancestor = target.parentElement;
+            while (ancestor) {
+                mark(ancestor, "data-html-to-ps-capture-ancestor");
+                ancestor = ancestor.parentElement;
+            }
+
+            mark(target, "data-html-to-ps-capture-target", captureMode);
+
+            if (captureMode === "backdrop") {
+                for (const child of Array.from(target.childNodes)) {
+                    if (child.nodeType !== Node.TEXT_NODE) continue;
+                    state.textNodes.push({ node: child, value: child.textContent });
+                    child.textContent = "";
+                }
+            }
+
+            const style = document.createElement("style");
+            style.setAttribute("data-html-to-ps-capture-style", "");
+            style.textContent = `
+                [data-html-to-ps-capture-hidden] {
+                    opacity: 0 !important;
+                }
+                [data-html-to-ps-capture-ancestor] {
+                    opacity: 1 !important;
+                    background-color: transparent !important;
+                    background-image: none !important;
+                    border-color: transparent !important;
+                    box-shadow: none !important;
+                }
+                [data-html-to-ps-capture-ancestor]::before,
+                [data-html-to-ps-capture-ancestor]::after {
+                    content: none !important;
+                    display: none !important;
+                }
+                [data-html-to-ps-capture-target] {
+                    opacity: 1 !important;
+                }
+                [data-html-to-ps-capture-target="backdrop"] > * {
+                    opacity: 0 !important;
+                }
+            `;
+            document.head.appendChild(style);
+            state.style = style;
+        },
+        {
+            domId: node.domId || node.id,
+            captureMode: node.rasterCapture || "element",
+        },
+    );
+}
+
+async function restoreRasterCapture(page) {
+    await page.evaluate(() => {
+        const stateKey = "__htmlToPsRasterCaptureState";
+        const state = window[stateKey];
+        if (!state) return;
+
+        try {
+            for (const entry of state.textNodes || []) {
+                entry.node.textContent = entry.value;
+            }
+            for (let i = (state.attributes || []).length - 1; i >= 0; i -= 1) {
+                const entry = state.attributes[i];
+                if (entry.hadAttribute) {
+                    entry.element.setAttribute(entry.attribute, entry.value);
+                } else {
+                    entry.element.removeAttribute(entry.attribute);
+                }
+            }
+            state.style?.remove();
+        } finally {
+            delete window[stateKey];
+        }
+    });
+}
+
 async function annotateRenderedFonts(page, scene) {
     const textNodes = [];
     walkNodes(
@@ -368,6 +479,10 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                             rotation: 0,
                             renderWidth: width,
                             renderHeight: height,
+                            layoutWidth: width,
+                            layoutHeight: height,
+                            scaleX: 1,
+                            scaleY: 1,
                             unsupported: false,
                         };
                     }
@@ -378,6 +493,10 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                             rotation: 0,
                             renderWidth: width,
                             renderHeight: height,
+                            layoutWidth: width,
+                            layoutHeight: height,
+                            scaleX: 1,
+                            scaleY: 1,
                             unsupported: true,
                         };
                     }
@@ -394,12 +513,29 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                         rotation,
                         renderWidth: width * scaleX,
                         renderHeight: height * scaleY,
+                        layoutWidth: width,
+                        layoutHeight: height,
+                        scaleX,
+                        scaleY,
                         unsupported: skewed,
                     };
                 }
 
                 function bounds(el) {
                     const rect = el.getBoundingClientRect();
+                    const x = rect.left - rootRect.left;
+                    const y = rect.top - rootRect.top;
+                    return {
+                        x,
+                        y,
+                        width: rect.width,
+                        height: rect.height,
+                        right: x + rect.width,
+                        bottom: y + rect.height,
+                    };
+                }
+
+                function boundsFromRect(rect) {
                     const x = rect.left - rootRect.left;
                     const y = rect.top - rootRect.top;
                     return {
@@ -468,6 +604,13 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                         .trim();
                 }
 
+                function hasTextElementChild(el) {
+                    return Array.from(el.children).some(child => {
+                        if (child.tagName === "BR") return false;
+                        return Boolean((child.innerText || child.textContent || "").trim());
+                    });
+                }
+
                 function explicitRole(el) {
                     return (el.getAttribute("data-ps-role") || "").trim().toLowerCase();
                 }
@@ -476,6 +619,10 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                     const role = explicitRole(el);
                     if (role === "text") return true;
                     if (role && role !== "text") return false;
+
+                    // Preserve independently styled runs instead of collapsing a
+                    // composite element into one Photoshop text layer.
+                    if (hasTextElementChild(el)) return false;
 
                     const tag = el.tagName;
                     if (/^H[1-6]$/.test(tag)) return true;
@@ -556,7 +703,50 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                         (style.maskImage && style.maskImage !== "none") ||
                         (style.webkitMaskImage && style.webkitMaskImage !== "none");
                     const mixBlend = style.mixBlendMode && style.mixBlendMode !== "normal";
-                    return Boolean(clip || filter || backdrop || mask || mixBlend);
+                    const textShadow = style.textShadow && style.textShadow !== "none";
+                    return Boolean(clip || filter || backdrop || mask || mixBlend || textShadow);
+                }
+
+                function hasVisibleBorder(style) {
+                    return ["Top", "Right", "Bottom", "Left"].some(side => {
+                        const width = num(style[`border${side}Width`], 0);
+                        const borderStyle = style[`border${side}Style`];
+                        const color = rgba(style[`border${side}Color`]);
+                        return width > 0 && borderStyle !== "none" && color && color.a > 0;
+                    });
+                }
+
+                function hasBorderRadius(style) {
+                    return [
+                        style.borderTopLeftRadius,
+                        style.borderTopRightRadius,
+                        style.borderBottomRightRadius,
+                        style.borderBottomLeftRadius,
+                    ].some(value => num(value, 0) > 0);
+                }
+
+                function pseudoHasVisual(el, pseudo) {
+                    const style = getComputedStyle(el, pseudo);
+                    const content = String(style.content || "").trim();
+                    const hasContent = content && content !== "none" && content !== "normal";
+                    const background = rgba(style.backgroundColor);
+                    const hasBackgroundColor = background && background.a > 0;
+                    const hasBackgroundImage = style.backgroundImage && style.backgroundImage !== "none";
+                    const hasShadow = style.boxShadow && style.boxShadow !== "none";
+                    return Boolean(
+                        hasContent || hasBackgroundColor || hasBackgroundImage || hasShadow || hasVisibleBorder(style),
+                    );
+                }
+
+                function backdropFallbackReasons(el, style) {
+                    const reasons = [];
+                    if (style.backgroundImage && style.backgroundImage !== "none") reasons.push("background image/gradient");
+                    if (style.boxShadow && style.boxShadow !== "none") reasons.push("box shadow");
+                    if (hasVisibleBorder(style)) reasons.push("border");
+                    if (hasBorderRadius(style)) reasons.push("border radius");
+                    if (pseudoHasVisual(el, "::before")) reasons.push("::before");
+                    if (pseudoHasVisual(el, "::after")) reasons.push("::after");
+                    return reasons;
                 }
 
                 function paintOrder(style) {
@@ -564,8 +754,7 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                     return z * 1000000 + ++sequence;
                 }
 
-                function baseNode(el, type, name, style) {
-                    const box = bounds(el);
+                function baseNodeFromBounds(el, type, name, style, box, locator = elementLocator(el)) {
                     const transform = transformInfo(style, el);
                     const domId = uid(el);
                     return {
@@ -573,7 +762,7 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                         domId,
                         type,
                         name,
-                        locator: elementLocator(el),
+                        locator,
                         mode: "native",
                         bounds: box,
                         requiredBottom: box.bottom,
@@ -582,6 +771,10 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                         rotation: transform.rotation,
                         renderWidth: transform.renderWidth || box.width,
                         renderHeight: transform.renderHeight || box.height,
+                        layoutWidth: transform.layoutWidth || box.width,
+                        layoutHeight: transform.layoutHeight || box.height,
+                        scaleX: transform.scaleX || 1,
+                        scaleY: transform.scaleY || 1,
                         paintOrder: paintOrder(style),
                         children: [],
                         text: null,
@@ -590,6 +783,10 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                         rasterPath: null,
                         fallbackReason: null,
                     };
+                }
+
+                function baseNode(el, type, name, style) {
+                    return baseNodeFromBounds(el, type, name, style, bounds(el));
                 }
 
                 function makeSkipped(el, style, error, fallbackName = "Element") {
@@ -614,6 +811,10 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                             rotation: 0,
                             renderWidth: 0,
                             renderHeight: 0,
+                            layoutWidth: 0,
+                            layoutHeight: 0,
+                            scaleX: 1,
+                            scaleY: 1,
                             paintOrder: ++sequence,
                             children: [],
                             text: null,
@@ -647,6 +848,32 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                     return node;
                 }
 
+                function makeBackdrop(el, style, name) {
+                    const reasons = backdropFallbackReasons(el, style);
+                    if (reasons.length) {
+                        const node = makeRaster(
+                            el,
+                            `${name} - Backdrop`,
+                            style,
+                            `backdrop requires rendered fallback: ${reasons.join(", ")}`,
+                        );
+                        node.rasterCapture = "backdrop";
+                        return node;
+                    }
+
+                    const background = rgba(style.backgroundColor);
+                    if (!background || background.a <= 0) return null;
+
+                    const node = baseNode(el, "shape", `${name} - Background`, style);
+                    node.shape = {
+                        fill: background,
+                        borderColor: null,
+                        borderWidth: 0,
+                        borderRadius: 0,
+                    };
+                    return node;
+                }
+
                 function makeText(el, style) {
                     const node = baseNode(el, "text", nodeName(el, "Text"), style);
                     const color = rgba(style.color) || { r: 0, g: 0, b: 0, a: 1 };
@@ -669,30 +896,89 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                     return node;
                 }
 
+                function makeTextRun(textNode, style, textIndex) {
+                    const parent = textNode.parentElement;
+                    if (!parent) throw new Error("Text run has no parent element.");
+
+                    const rawContents = textNode.textContent || "";
+                    const preservesWhitespace = /^(pre|pre-wrap|break-spaces)$/.test(style.whiteSpace);
+                    const contents = preservesWhitespace
+                        ? rawContents.replace(/\r\n/g, "\n")
+                        : rawContents.replace(/\s+/g, " ").trim();
+                    if (!contents) return null;
+
+                    const range = document.createRange();
+                    range.selectNodeContents(textNode);
+                    const rect = range.getBoundingClientRect();
+                    if (!(rect.width > 0) || !(rect.height > 0)) return null;
+
+                    const locator = `${elementLocator(parent)} ::text(${textIndex})`;
+                    const node = baseNodeFromBounds(
+                        parent,
+                        "text",
+                        contents.length <= 40 ? contents : "Text run",
+                        style,
+                        boundsFromRect(rect),
+                        locator,
+                    );
+                    node.layoutWidth = rect.width;
+                    node.layoutHeight = rect.height;
+                    const color = rgba(style.color) || { r: 0, g: 0, b: 0, a: 1 };
+                    const lineHeight = style.lineHeight === "normal" ? null : num(style.lineHeight, null);
+                    const letterSpacing = style.letterSpacing === "normal" ? 0 : num(style.letterSpacing, 0);
+
+                    node.text = {
+                        contents,
+                        mode: "point",
+                        family: firstFontFamily(style.fontFamily),
+                        postScriptName: parent.getAttribute("data-ps-font-postscript") || null,
+                        sizePx: num(style.fontSize, 16),
+                        lineHeightPx: lineHeight,
+                        letterSpacingPx: letterSpacing,
+                        align: style.textAlign || "left",
+                        color,
+                    };
+                    return node;
+                }
+
                 function makeImage(el, style) {
                     const name = nodeName(el, "Image");
                     const transform = transformInfo(style, el);
+                    const fallbackReasons = [];
+                    const objectFit = style.objectFit || "fill";
+                    const objectPosition = String(style.objectPosition || "50% 50%").trim();
+                    const renderedWidth = num(style.width, el.clientWidth || el.width || 0);
+                    const renderedHeight = num(style.height, el.clientHeight || el.height || 0);
+                    const sourceRatio = el.naturalWidth && el.naturalHeight ? el.naturalWidth / el.naturalHeight : null;
+                    const boxRatio = renderedWidth > 0 && renderedHeight > 0 ? renderedWidth / renderedHeight : null;
 
-                    if (
-                        el.hasAttribute("data-ps-flatten") ||
-                        hasUnsupportedVisual(style) ||
-                        transform.unsupported ||
-                        (style.objectFit === "cover" &&
-                            el.naturalWidth &&
-                            el.naturalHeight &&
-                            Math.abs(
-                                el.naturalWidth / el.naturalHeight -
-                                    num(style.width, el.width) / Math.max(1, num(style.height, el.height)),
-                            ) > 0.01)
-                    ) {
-                        return makeRaster(el, name, style, "image requires rendered fallback");
+                    if (el.hasAttribute("data-ps-flatten")) fallbackReasons.push("data-ps-flatten");
+                    if (hasUnsupportedVisual(style)) fallbackReasons.push("unsupported clipping/filter/mask/blend");
+                    if (transform.unsupported) fallbackReasons.push("unsupported transform");
+                    if (hasVisibleBorder(style)) fallbackReasons.push("border");
+                    if (hasBorderRadius(style)) fallbackReasons.push("border radius");
+                    if (style.boxShadow && style.boxShadow !== "none") fallbackReasons.push("box shadow");
+
+                    if (objectFit === "none" || objectFit === "scale-down") {
+                        fallbackReasons.push(`object-fit: ${objectFit}`);
+                    } else if (objectFit !== "fill" && sourceRatio && boxRatio && Math.abs(sourceRatio - boxRatio) > 0.01) {
+                        fallbackReasons.push(`object-fit: ${objectFit} changes visible image bounds`);
+                    }
+
+                    if (objectFit !== "fill" && objectPosition !== "50% 50%") {
+                        fallbackReasons.push(`object-position: ${objectPosition}`);
+                    }
+
+                    if (fallbackReasons.length) {
+                        return makeRaster(el, name, style, `image requires rendered fallback: ${fallbackReasons.join(", ")}`);
                     }
 
                     const node = baseNode(el, "image", name, style);
                     node.image = {
                         src: el.currentSrc || el.src,
                         assetPath: null,
-                        objectFit: style.objectFit || "fill",
+                        objectFit,
+                        objectPosition,
                     };
                     return node;
                 }
@@ -716,23 +1002,51 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                     return node;
                 }
 
-                function flattenChildren(el, result) {
-                    for (const child of Array.from(el.children)) {
+                function flattenChildren(el, result, parentOpacityApplied = false) {
+                    let textIndex = 0;
+                    for (const child of Array.from(el.childNodes)) {
                         let style;
                         try {
+                            if (child.nodeType === Node.TEXT_NODE) {
+                                const textNode = makeTextRun(child, getComputedStyle(el), ++textIndex);
+                                if (textNode) {
+                                    if (parentOpacityApplied) textNode.opacity = 1;
+                                    result.push(textNode);
+                                }
+                                continue;
+                            }
+
+                            if (child.nodeType !== Node.ELEMENT_NODE) continue;
                             if (child.hasAttribute("data-ps-ignore")) continue;
                             style = getComputedStyle(child);
                             if (!visible(child, style)) continue;
+
+                            const role = explicitRole(child);
+
+                            if (child.hasAttribute("data-ps-flatten")) {
+                                result.push(makeRaster(child, nodeName(child, "Flattened visual"), style, "data-ps-flatten"));
+                                continue;
+                            }
 
                             if (child.hasAttribute("data-ps-group")) {
                                 result.push(makeGroup(child, style));
                                 continue;
                             }
 
-                            const role = explicitRole(child);
-
-                            if (child.hasAttribute("data-ps-flatten")) {
-                                result.push(makeRaster(child, nodeName(child, "Flattened visual"), style, "data-ps-flatten"));
+                            const transform = transformInfo(style, child);
+                            const transformedContainer =
+                                style.transform && style.transform !== "none" && child.children.length > 0;
+                            if (hasUnsupportedVisual(style) || transform.unsupported || transformedContainer) {
+                                result.push(
+                                    makeRaster(
+                                        child,
+                                        nodeName(child, "Rendered visual"),
+                                        style,
+                                        transform.unsupported || transformedContainer
+                                            ? "element container transform requires rendered fallback"
+                                            : "element uses unsupported clipping/filter/mask/blend/text-shadow",
+                                    ),
+                                );
                                 continue;
                             }
 
@@ -747,10 +1061,19 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                             }
 
                             if (role === "text" || shouldText(child)) {
+                                const backdrop = makeBackdrop(child, style, nodeName(child, "Text"));
+                                if (backdrop) result.push(backdrop);
                                 result.push(makeText(child, style));
                                 continue;
                             }
 
+                            if (num(style.opacity, 1) < 0.999 && child.children.length > 0) {
+                                result.push(makeGroup(child, style));
+                                continue;
+                            }
+
+                            const backdrop = makeBackdrop(child, style, nodeName(child, "Element"));
+                            if (backdrop) result.push(backdrop);
                             flattenChildren(child, result);
                         } catch (error) {
                             result.push(makeSkipped(child, style, error));
@@ -759,22 +1082,32 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                 }
 
                 function makeGroup(el, style = getComputedStyle(el)) {
-                    const node = baseNode(el, "group", nodeName(el, "Section"), style);
-                    const background = rgba(style.backgroundColor);
-
-                    if (background && background.a > 0) {
-                        const bg = baseNode(el, "shape", `${node.name} - Background`, style);
-                        bg.paintOrder = -1000000000 + node.paintOrder;
-                        bg.shape = {
-                            fill: background,
-                            borderColor: null,
-                            borderWidth: 0,
-                            borderRadius: 0,
-                        };
-                        node.children.push(bg);
+                    if (el.hasAttribute("data-ps-flatten")) {
+                        return makeRaster(el, nodeName(el, "Flattened group"), style, "data-ps-flatten");
                     }
 
-                    flattenChildren(el, node.children);
+                    const transform = transformInfo(style, el);
+                    const transformedContainer = style.transform && style.transform !== "none" && el.children.length > 0;
+                    if (hasUnsupportedVisual(style) || transform.unsupported || transformedContainer) {
+                        return makeRaster(
+                            el,
+                            nodeName(el, "Group"),
+                            style,
+                            transform.unsupported || transformedContainer
+                                ? "group container transform requires rendered fallback"
+                                : "group uses unsupported clipping/filter/mask/blend/text-shadow",
+                        );
+                    }
+
+                    const node = baseNode(el, "group", nodeName(el, "Section"), style);
+                    const backdrop = makeBackdrop(el, style, node.name);
+                    if (backdrop) {
+                        backdrop.paintOrder = -1000000000 + node.paintOrder;
+                        backdrop.opacity = 1;
+                        node.children.push(backdrop);
+                    }
+
+                    flattenChildren(el, node.children, true);
 
                     let maxBottom = node.bounds.bottom;
                     for (const child of node.children) {
@@ -874,16 +1207,26 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
             const fallbackPath = path.resolve(outputDir, "fallback", `${safeName(node.name)}-${node.id}.png`);
 
             try {
+                await prepareRasterCapture(page, node);
                 await targetLocator.screenshot({
                     path: fallbackPath,
                     animations: "disabled",
                     caret: "hide",
+                    omitBackground: true,
                 });
                 node.rasterPath = fallbackPath;
             } catch (error) {
                 node.mode = "skipped";
                 node.fallbackReason = `${node.fallbackReason || "fallback"}; screenshot failed: ${errorMessage(error)}`;
                 scene.warnings.push(`${nodeLocation(node, section)} fallback screenshot failed: ${errorMessage(error)}`);
+            } finally {
+                try {
+                    await restoreRasterCapture(page);
+                } catch (restoreError) {
+                    scene.warnings.push(
+                        `${nodeLocation(node, section)} raster capture cleanup failed: ${errorMessage(restoreError)}`,
+                    );
+                }
             }
         }
 
@@ -902,9 +1245,17 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                 // A source that cannot be materialized degrades to the rendered element.
                 const fallbackPath = path.resolve(outputDir, "fallback", `${safeName(node.name)}-${node.id}-image.png`);
                 try {
-                    await page
-                        .locator(`[data-ps-node-id="${node.domId || node.id}"]`)
-                        .screenshot({ path: fallbackPath, animations: "disabled", caret: "hide" });
+                    try {
+                        await prepareRasterCapture(page, node);
+                        await page.locator(`[data-ps-node-id="${node.domId || node.id}"]`).screenshot({
+                            path: fallbackPath,
+                            animations: "disabled",
+                            caret: "hide",
+                            omitBackground: true,
+                        });
+                    } finally {
+                        await restoreRasterCapture(page);
+                    }
                     node.type = "raster";
                     node.mode = "smart";
                     node.rasterPath = fallbackPath;

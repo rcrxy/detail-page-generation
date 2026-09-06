@@ -44,14 +44,20 @@ within the HTML document. Do not use `<link rel="stylesheet">`, CSS `@import`,
 or separate `.css` files. The converter still keeps its layout-probing fallback
 for pre-existing pages whose stylesheets are not CSSOM-readable.
 
-## Font requirement
+## Current font guard
 
-`font-weight` is prohibited.
+The current 0.0.1 build rejects authored `font-weight` declarations.
 
 Select a concrete Bold/Heavy/Black/etc. font face via `font-family` instead.
 
 The build checks author stylesheets and inline styles. If it finds an authored
 `font-weight` declaration it stops before generating the handoff.
+
+This is a current converter guard, not a general creative-design objective. It
+must not be used as justification to simplify typography beyond what the
+approved design requires. Future converter work should accept browser-resolved
+font faces whenever they can be handed to Photoshop without synthetic weight
+selection.
 
 Chromium records the platform PostScript font actually used for every text
 node, including glyph fallback when an earlier CSS family cannot render Chinese
@@ -69,11 +75,28 @@ family before attempting Photoshop font resolution.
 Numeric browser `line-height` values are transferred by setting
 `TextItem.useAutoLeading = false` and then assigning `TextItem.leading`.
 
+Composite text elements are split when child elements carry independent text
+runs. Bare DOM text next to child elements is measured with a browser `Range`
+and remains an editable Photoshop text layer. An explicit
+`data-ps-role="text"` keeps the whole element as one text layer when that is the
+intended handoff structure.
+
+Text scale and rotation are transferred to Photoshop and then recentered on the
+browser-measured bounds. Text color alpha contributes to layer opacity, and
+group opacity remains group-level so overlapping children retain group
+compositing.
+
 Placed images are sized from the full Smart Object transform quadrilateral,
 not `layer.bounds`. Photoshop layer bounds omit transparent pixels and would
 otherwise enlarge the visible content of PNG files that contain transparent
 padding. A missing Smart Object transform degrades to visible bounds for that
 node only and is written to the handoff report.
+
+Images remain native Smart Objects when direct placement reproduces their
+browser appearance. Object fitting, object positioning, clipping, borders,
+rounded corners, shadows, filters, masks, and unsupported transforms degrade
+that image locally to an isolated rendered Smart Object instead of requiring a
+prototype rewrite.
 
 ## Build
 
@@ -135,7 +158,7 @@ Available hints:
 
 - `data-ps-group`
 - `data-ps-name`
-- `data-ps-role`
+- `data-ps-role="text|image|shape"`
 - `data-ps-ignore`
 - `data-ps-flatten`
 - `data-ps-font-postscript`
@@ -145,12 +168,26 @@ Available hints:
 
 - simple solid backgrounds are currently raster color layers, not vector Shape
   Layers;
-- clipping/masks/complex SVG/filter effects may use local raster fallback;
+- gradients, background images, borders, rounded corners, shadows,
+  pseudo-elements, clipping, masks, blend modes, complex SVG, and filter
+  effects may use isolated local raster fallback;
+- transformed containers with editable child layers currently use one local
+  raster fallback because Photoshop group-transform reconstruction is not yet
+  implemented;
 - text layout can differ slightly between Chromium and Photoshop;
+- a pseudo-element that paints beyond its originating element's measured box
+  can be clipped by the local backdrop capture;
+- isolated blend/filter rendering can differ when the effect depends on pixels
+  outside the captured element;
 - CSS stacking-context reconstruction is intentionally conservative;
 - no PSD/PSB save decision is made;
 - Photoshop versions other than 2024 are not part of the first compatibility
   target.
+
+These are converter boundaries, not prototype-design restrictions. Do not
+remove visual effects, flatten the page manually, simplify composition, or
+rewrite markup solely to avoid them. The converter must preserve unsupported
+visuals through the smallest practical local fallback.
 
 ## Failure isolation contract
 
@@ -178,17 +215,17 @@ limit verification to source inspection and non-executing syntax checks. Do not
 run conversion, formatting, packaging, or test suites unless the user later
 requests them explicitly.
 
-## Known conversion issues & authoring avoidance
+## Current conversion behavior and remaining edges
 
-Field notes from real conversions (899-2-D / 899-2-E, 2026-09). Each item:
-symptom -> why -> workaround now / what to fix later. Verify any prototype edit
-with the before/after pixel check below.
+Field notes from real conversions (899-2-D / 899-2-E, September 2026) are
+reflected below. They describe converter behavior, not reasons to narrow the
+design.
 
 ### Font policy sharp edges
 - `font-weight` with **any** value (including `normal`) aborts extraction. The
   `font:` shorthand also aborts: CSSOM expands it into
   `font-weight: normal`, so even a weight-free `font` shorthand trips the
-  guard. Author text typography with longhands only:
+  guard. Until the scanner is revised, only these longhands pass:
   `font-family` / `font-size` / `line-height`.
 - To select a real Bold face without `font-weight`, alias it through
   `@font-face { font-family: "Alias Name"; src: local("<PostScriptName>"); }`
@@ -197,44 +234,45 @@ with the before/after pixel check below.
   generated JSX assigns the exact font. `local()` resolution is environment
   dependent — confirm via the scene's rendered fonts, not just the family.
 
-### Content the extractor silently drops (design loss, no warning)
-- Composite headings (an `h2` containing `<strong>/<small>/<em>` runs) become
-  ONE text layer: single color, single font/size. Accent `<em>` colors are
-  lost, and a Latin+CJK mix collapses onto one face (e.g. a 220 px "4.5 CM"
-  numeral merged into a CJK heading). Avoid: put `data-ps-group` on the
-  heading, wrap each text run in its own inline element, keep `<br>` for line
-  breaks, so each run becomes its own editable colored layer.
-- Bare text inside a container that also has element children is dropped
-  (walker visits element children only). E.g. `.brand`'s `香蜜姿` text next to a
-  `<span>`, or `.hero-number`'s `4.5` next to `<span>CM</span>`. Avoid: wrap
-  every text run in a `<span>`.
-- Pseudo-elements (`::before` / `::after`) are never extracted (rings, circles,
-  overlay gradients, inner frames, watermarks), and gradient background images
-  on an element are not captured. They survive only when baked into an
-  enclosing element's raster fallback (that element has filter/blend/
-  `object-fit: cover` mismatch/`data-ps-flatten`). Otherwise recreate them from
-  the `[REFERENCE] Browser Render` layer in Photoshop.
+### Text extraction
+- Independently styled child runs are emitted as separate editable text layers.
+- Bare text mixed with element children is measured and emitted directly; it no
+  longer needs an author-added wrapper.
+- An element explicitly marked `data-ps-role="text"` intentionally remains one
+  text layer and therefore has one Photoshop font/color/size treatment.
+- Direct text runs use their parent element for browser font inspection. A
+  parent containing several fallback fonts can still produce a dominant-font
+  warning for those runs.
 
-### `data-ps-flatten` semantics — read before using it
-- `data-ps-flatten` rasters the element's on-screen region, so content painted
-  ABOVE it (later siblings / higher z-index, including text) is baked into the
-  PNG. Flattening a *backdrop* or *container* that sits under foreground
-  content duplicates that foreground in the PSD (it is also emitted as separate
-  layers). Only flatten elements that are opaque and topmost at their location,
-  or containers with no overlapping sibling. Do NOT flatten a section to keep a
-  gradient background behind editable text/images.
-- Corollary: pseudo decorations (a `推荐色` chip, a watermark) are usually
-  already baked into the product-image raster fallback; do not also add a
-  flattened clone or you double them.
+### Backgrounds, pseudo-elements, and shapes
+- Every traversed element can contribute a background; `data-ps-role="shape"`
+  is optional rather than required for visual preservation.
+- A simple solid background becomes an editable color layer.
+- A gradient, background image, border, rounded corner, shadow, `::before`, or
+  `::after` becomes an isolated backdrop Smart Object. Child text and images
+  remain separate editable layers.
+- Unsupported whole-element effects such as filters, masks, clipping, blend
+  modes, text shadows, skew, and transformed child containers use a local
+  rendered Smart Object.
 
-### Structural side effects when editing the prototype
-- Appending a new child element can break sibling selectors such as
-  `.gallery-intro > p:last-child`, silently unstyling that text (falls back to
-  the 16 px default). Audit `:last-child` / `:nth-child` rules before appending
-  nodes; prefer `:not(.class)` targeting when children may be added later.
-- Using `<b>` / `<strong>` for new decorative clones renders bold (UA default)
-  where the original pseudo / plain text was regular — a visible weight change.
-  Use neutral elements (`span` / `div`) for clones.
+### `data-ps-flatten` semantics
+- `data-ps-flatten` remains an explicit request to render the target element and
+  its descendants as one Smart Object.
+- During capture, unrelated page content is hidden and ancestor backgrounds are
+  neutralized, so overlapping siblings are not baked into the fallback.
+- CSS opacity is neutralized during capture and reapplied by Photoshop, avoiding
+  double opacity.
+- `data-ps-flatten` takes priority over `data-ps-group` when both are present.
+
+### Image placement
+- Plain images remain placed Smart Objects and retain transparent source-canvas
+  geometry.
+- `object-fit: contain|cover|none|scale-down`, non-default `object-position`,
+  rounded clipping, borders, shadows, masks, filters, and unsupported transforms
+  automatically use isolated local fallback when direct placement would change
+  the visible result.
+- Failure to materialize an image source also degrades to an isolated element
+  capture before the node is marked skipped.
 
 ### Verification practice
 - Whole-page before/after pixel diff of the root render (1500 px,
@@ -243,9 +281,14 @@ with the before/after pixel check below.
   copy the PNGs to ASCII temp paths before diffing.
 
 ### Fix-list (future tool work)
-- Represent gradient backgrounds and pseudo-element decorations natively, or
-  add a section-backdrop raster fallback that excludes foreground layers.
-- Warn (not silently skip) when a background-image gradient or pseudo-element
-  decoration is not representable.
-- Make `data-ps-flatten` capture the element in isolation from overlapping
-  siblings, or document that region-screenshot semantics are intentional.
+- revise the font-policy scanner so CSS shorthand expansion does not create
+  false positives, and permit browser-resolved concrete font faces when the
+  exact Photoshop PostScript face can be preserved;
+- create native Photoshop vector Shape Layers for solid fills, borders, and
+  rounded rectangles;
+- reconstruct selected gradients, masks, clipping, and layer effects natively
+  when doing so remains editable and faithful;
+- preserve transformed container children through native group transforms;
+- measure pseudo-element overflow beyond the originating element box;
+- improve per-text-run browser font inspection and multiline range geometry;
+- improve stacking-context and backdrop-dependent blend reconstruction.
