@@ -1,0 +1,25 @@
+product:
+  name: ""
+  category: ""
+  brand: ""
+  item_number: ""
+  target_users: []
+  use_cases: []
+
+selling_points: []
+
+product_info:
+  upper_material: ""
+  outsole_material: ""
+  colors: []
+  size_range: ""
+  heel_height: ""
+  extra_attributes: {}
+
+assets:
+  assets_root: "./assets"
+  references_root: "./references"
+
+page:
+  canvas_width: 1500
+  tone: ""

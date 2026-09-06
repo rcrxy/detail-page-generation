@@ -1,0 +1,136 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "html-to-ps scene 0.0.1",
+    "type": "object",
+    "required": ["version", "canvas", "referenceImage", "sections", "warnings"],
+    "properties": {
+        "version": {
+            "const": "0.0.1"
+        },
+        "canvas": {
+            "type": "object",
+            "required": ["width", "height", "resolution"],
+            "properties": {
+                "width": {
+                    "type": "number"
+                },
+                "height": {
+                    "type": "number"
+                },
+                "resolution": {
+                    "const": 72
+                }
+            }
+        },
+        "referenceImage": {
+            "type": "string"
+        },
+        "warnings": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "sections": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/node"
+            }
+        }
+    },
+    "$defs": {
+        "bounds": {
+            "type": "object",
+            "required": ["x", "y", "width", "height", "right", "bottom"],
+            "properties": {
+                "x": {
+                    "type": "number"
+                },
+                "y": {
+                    "type": "number"
+                },
+                "width": {
+                    "type": "number"
+                },
+                "height": {
+                    "type": "number"
+                },
+                "right": {
+                    "type": "number"
+                },
+                "bottom": {
+                    "type": "number"
+                }
+            }
+        },
+        "node": {
+            "type": "object",
+            "required": ["id", "type", "name", "bounds", "mode", "children"],
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "domId": {
+                    "type": ["string", "null"]
+                },
+                "type": {
+                    "enum": ["group", "text", "image", "shape", "raster"]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "mode": {
+                    "enum": ["native", "smart", "skipped"]
+                },
+                "bounds": {
+                    "$ref": "#/$defs/bounds"
+                },
+                "opacity": {
+                    "type": "number"
+                },
+                "fontFamily": {
+                    "type": "string"
+                },
+                "rotation": {
+                    "type": "number"
+                },
+                "paintOrder": {
+                    "type": "number"
+                },
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/node"
+                    }
+                },
+                "text": {
+                    "type": ["object", "null"]
+                },
+                "image": {
+                    "type": ["object", "null"]
+                },
+                "shape": {
+                    "type": ["object", "null"]
+                },
+                "rasterPath": {
+                    "type": ["string", "null"]
+                },
+                "fallbackReason": {
+                    "type": ["string", "null"]
+                },
+                "requiredBottom": {
+                    "type": "number"
+                },
+                "renderWidth": {
+                    "type": "number"
+                },
+                "renderHeight": {
+                    "type": "number"
+                }
+            }
+        }
+    }
+}

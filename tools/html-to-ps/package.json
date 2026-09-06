@@ -1,0 +1,16 @@
+{
+    "name": "html-to-ps-handoff",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "description": "One-time HTML/CSS to Photoshop ExtendScript handoff POC.",
+    "scripts": {
+        "build": "node src/build.mjs",
+        "demo": "node src/build.mjs --input ./example/index.html --out ./example/output",
+        "check": "node --check src/build.mjs && node --check src/extract.mjs && node --check src/generate-jsx.mjs && node --check test/node-failure-isolation.mjs",
+        "test": "node test/node-failure-isolation.mjs"
+    },
+    "dependencies": {
+        "playwright": "^1.55.0"
+    }
+}
