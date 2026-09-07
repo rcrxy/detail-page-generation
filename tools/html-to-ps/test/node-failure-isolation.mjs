@@ -60,7 +60,13 @@ try {
     assert.match(jsx, /function nodeContext\(node, sectionName\)/);
     assert.match(jsx, /Section processing failed; continuing with the next section/);
     assert.match(jsx, /children will be created in the parent group/);
-    assert.match(jsx, /createNode\(children\[i\], group \|\| parentGroup, sectionName\)/);
+    assert.match(jsx, /createNode\(children\[i\], group \|\| parentGroup, sectionName, childFontFamily\)/);
+    assert.doesNotMatch(
+        jsx,
+        /"(?:referenceImage|src|assetPath|rasterPath)":"(?:file:\/\/\/|[A-Za-z]:[\\/]|\\\\)/,
+        "generated JSX resource fields must not contain absolute paths",
+    );
+    assert.match(jsx, /"rasterPath":"fallback\//);
 
     console.log("node failure isolation: ok");
 } finally {

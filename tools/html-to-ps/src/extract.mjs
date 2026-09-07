@@ -114,6 +114,34 @@ function nodeLocation(node, section) {
     return `section "${sectionLabel}" / element "${elementLabel}" / id "${id}" / type "${type}"`;
 }
 
+function pseudoCaptureBounds(node, canvas, padding = 128) {
+    const reason = String(node?.fallbackReason || "");
+    if (!reason.includes("::before") && !reason.includes("::after")) return null;
+
+    const left = Math.max(0, Number(node.bounds.x) - padding);
+    const top = Math.max(0, Number(node.bounds.y) - padding);
+    const right = Math.min(Number(canvas.width), Number(node.bounds.right) + padding);
+    const bottom = Math.min(Number(canvas.height), Number(node.bounds.bottom) + padding);
+
+    return {
+        x: left,
+        y: top,
+        width: Math.max(1, right - left),
+        height: Math.max(1, bottom - top),
+        right,
+        bottom,
+    };
+}
+
+function applyRasterCaptureBounds(node, captureBounds) {
+    node.bounds = captureBounds;
+    node.requiredBottom = captureBounds.bottom;
+    node.renderWidth = captureBounds.width;
+    node.renderHeight = captureBounds.height;
+    node.layoutWidth = captureBounds.width;
+    node.layoutHeight = captureBounds.height;
+}
+
 async function prepareRasterCapture(page, node) {
     await page.evaluate(
         ({ domId, captureMode }) => {
@@ -160,8 +188,11 @@ async function prepareRasterCapture(page, node) {
             if (captureMode === "backdrop") {
                 for (const child of Array.from(target.childNodes)) {
                     if (child.nodeType !== Node.TEXT_NODE) continue;
-                    state.textNodes.push({ node: child, value: child.textContent });
-                    child.textContent = "";
+                    const wrapper = document.createElement("html-to-ps-text");
+                    wrapper.setAttribute("data-html-to-ps-capture-text", "");
+                    child.parentNode.insertBefore(wrapper, child);
+                    wrapper.appendChild(child);
+                    state.textNodes.push({ node: child, wrapper });
                 }
             }
 
@@ -189,6 +220,9 @@ async function prepareRasterCapture(page, node) {
                 [data-html-to-ps-capture-target="backdrop"] > * {
                     opacity: 0 !important;
                 }
+                [data-html-to-ps-capture-text] {
+                    opacity: 0 !important;
+                }
             `;
             document.head.appendChild(style);
             state.style = style;
@@ -208,7 +242,7 @@ async function restoreRasterCapture(page) {
 
         try {
             for (const entry of state.textNodes || []) {
-                entry.node.textContent = entry.value;
+                entry.wrapper.replaceWith(entry.node);
             }
             for (let i = (state.attributes || []).length - 1; i >= 0; i -= 1) {
                 const entry = state.attributes[i];
@@ -289,9 +323,7 @@ async function annotateRenderedFonts(page, scene) {
                     );
                 }
             } catch (error) {
-                scene.warnings.push(
-                    `${nodeLocation(node, section)} rendered-font inspection failed: ${errorMessage(error)}`,
-                );
+                scene.warnings.push(`${nodeLocation(node, section)} rendered-font inspection failed: ${errorMessage(error)}`);
             }
         }
     } catch (error) {
@@ -796,8 +828,12 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                     } catch (_) {
                         let domId = null;
                         let locator = "<unavailable>";
-                        try { domId = uid(el); } catch (_) {}
-                        try { locator = elementLocator(el); } catch (_) {}
+                        try {
+                            domId = uid(el);
+                        } catch (_) {}
+                        try {
+                            locator = elementLocator(el);
+                        } catch (_) {}
                         node = {
                             id: `${domId || "failed"}-node-${++nodeCounter}`,
                             domId,
@@ -875,12 +911,44 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                 }
 
                 function makeText(el, style) {
-                    const node = baseNode(el, "text", nodeName(el, "Text"), style);
+                    const explicitMode = (el.getAttribute("data-ps-text-mode") || "").trim().toLowerCase();
+                    const layoutAlignedText =
+                        !explicitMode &&
+                        ["flex", "inline-flex", "grid", "inline-grid"].includes(style.display) &&
+                        !hasTextElementChild(el);
+
+                    // Point text has no wrapping box in the browser: its glyphs start
+                    // at the content-box origin, inset from any border/padding that a
+                    // separate backdrop layer captured. Measure the real text-run
+                    // bounds so native Photoshop text lands where the browser painted
+                    // it (e.g. centered inside a padded pill/box label by its equal
+                    // padding) instead of at the outer border-box corner. Paragraph
+                    // text with an authored box still keeps the element box so its
+                    // flow/box size stays reproducible in Photoshop.
+                    const authoredBox =
+                        explicitMode === "paragraph" || (!explicitMode && !layoutAlignedText && hasAuthoredTextBoxSize(el));
+
+                    let textBounds = null;
+                    if (!authoredBox) {
+                        try {
+                            const range = document.createRange();
+                            range.selectNodeContents(el);
+                            const rect = range.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                textBounds = boundsFromRect(rect);
+                            }
+                        } catch (_) {
+                            // Fall through to the authored element box below.
+                        }
+                    }
+
+                    const node = textBounds
+                        ? baseNodeFromBounds(el, "text", nodeName(el, "Text"), style, textBounds)
+                        : baseNode(el, "text", nodeName(el, "Text"), style);
                     const color = rgba(style.color) || { r: 0, g: 0, b: 0, a: 1 };
                     const lineHeight = style.lineHeight === "normal" ? null : num(style.lineHeight, null);
                     const letterSpacing = style.letterSpacing === "normal" ? 0 : num(style.letterSpacing, 0);
-                    const explicitMode = (el.getAttribute("data-ps-text-mode") || "").trim().toLowerCase();
-                    const mode = explicitMode || (hasAuthoredTextBoxSize(el) ? "paragraph" : "point");
+                    const mode = explicitMode || (authoredBox ? "paragraph" : "point");
 
                     node.text = {
                         contents: (el.innerText || el.textContent || "").replace(/\r\n/g, "\n"),
@@ -984,12 +1052,19 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                 }
 
                 function makeShape(el, style) {
+                    const pseudoReasons = backdropFallbackReasons(el, style).filter(
+                        reason => reason === "::before" || reason === "::after",
+                    );
                     if (
                         el.hasAttribute("data-ps-flatten") ||
                         hasUnsupportedVisual(style) ||
-                        transformInfo(style, el).unsupported
+                        transformInfo(style, el).unsupported ||
+                        pseudoReasons.length
                     ) {
-                        return makeRaster(el, nodeName(el, "Shape"), style, "shape requires rendered fallback");
+                        const reason = pseudoReasons.length
+                            ? `shape requires rendered fallback: ${pseudoReasons.join(", ")}`
+                            : "shape requires rendered fallback";
+                        return makeRaster(el, nodeName(el, "Shape"), style, reason);
                     }
 
                     const node = baseNode(el, "shape", nodeName(el, "Shape"), style);
@@ -1195,25 +1270,50 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
 
         // Local fallback screenshots.
         const rasterNodes = [];
-        walkNodes(scene.sections, (node, section) => {
-            if (node.type === "raster") rasterNodes.push({ node, section });
-        }, null, (error, node, section) => {
-            scene.warnings.push(`${nodeLocation(node, section)} could not enter the raster fallback queue: ${errorMessage(error)}`);
-        });
+        walkNodes(
+            scene.sections,
+            (node, section) => {
+                if (node.type === "raster") rasterNodes.push({ node, section });
+            },
+            null,
+            (error, node, section) => {
+                scene.warnings.push(
+                    `${nodeLocation(node, section)} could not enter the raster fallback queue: ${errorMessage(error)}`,
+                );
+            },
+        );
 
         for (const { node, section } of rasterNodes) {
             if (node.mode === "skipped") continue;
             const targetLocator = page.locator(`[data-ps-node-id="${node.domId || node.id}"]`);
             const fallbackPath = path.resolve(outputDir, "fallback", `${safeName(node.name)}-${node.id}.png`);
+            const expandedBounds = pseudoCaptureBounds(node, scene.canvas);
 
             try {
                 await prepareRasterCapture(page, node);
-                await targetLocator.screenshot({
-                    path: fallbackPath,
-                    animations: "disabled",
-                    caret: "hide",
-                    omitBackground: true,
-                });
+                if (expandedBounds) {
+                    await page.screenshot({
+                        path: fallbackPath,
+                        animations: "disabled",
+                        caret: "hide",
+                        fullPage: true,
+                        omitBackground: true,
+                        clip: {
+                            x: rootBox.x + expandedBounds.x,
+                            y: rootBox.y + expandedBounds.y,
+                            width: expandedBounds.width,
+                            height: expandedBounds.height,
+                        },
+                    });
+                    applyRasterCaptureBounds(node, expandedBounds);
+                } else {
+                    await targetLocator.screenshot({
+                        path: fallbackPath,
+                        animations: "disabled",
+                        caret: "hide",
+                        omitBackground: true,
+                    });
+                }
                 node.rasterPath = fallbackPath;
             } catch (error) {
                 node.mode = "skipped";
@@ -1232,11 +1332,18 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
 
         // Materialize image assets so the one-time JSX is self-contained.
         const imageNodes = [];
-        walkNodes(scene.sections, (node, section) => {
-            if (node.type === "image") imageNodes.push({ node, section });
-        }, null, (error, node, section) => {
-            scene.warnings.push(`${nodeLocation(node, section)} could not enter the image materialization queue: ${errorMessage(error)}`);
-        });
+        walkNodes(
+            scene.sections,
+            (node, section) => {
+                if (node.type === "image") imageNodes.push({ node, section });
+            },
+            null,
+            (error, node, section) => {
+                scene.warnings.push(
+                    `${nodeLocation(node, section)} could not enter the image materialization queue: ${errorMessage(error)}`,
+                );
+            },
+        );
 
         for (const { node, section } of imageNodes) {
             try {

@@ -74,12 +74,19 @@ family before attempting Photoshop font resolution.
 
 Numeric browser `line-height` values are transferred by setting
 `TextItem.useAutoLeading = false` and then assigning `TextItem.leading`.
+Browser line breaks are normalized to Photoshop carriage returns before the
+scene is embedded in the generated JSX.
 
 Composite text elements are split when child elements carry independent text
 runs. Bare DOM text next to child elements is measured with a browser `Range`
 and remains an editable Photoshop text layer. An explicit
 `data-ps-role="text"` keeps the whole element as one text layer when that is the
 intended handoff structure.
+
+Direct text inside a Flexbox or Grid alignment container is also measured with
+a browser `Range` and emitted as point text. This preserves the final aligned
+glyph position instead of treating the whole layout container as a Photoshop
+paragraph box.
 
 Text scale and rotation are transferred to Photoshop and then recentered on the
 browser-measured bounds. Text color alpha contributes to layer opacity, and
@@ -128,6 +135,11 @@ handoff-output/
 └─ build-detail-page.jsx
 ```
 
+All paths stored in `scene.json` and embedded in the generated JSX are relative
+to the output directory. The JSX resolves `reference.png`, `assets/`,
+`fallback/`, and `handoff-report.txt` from its own location, so the complete
+handoff directory can be moved or copied without rewriting resource paths.
+
 ## Photoshop
 
 1. Open Photoshop 2024.
@@ -175,8 +187,9 @@ Available hints:
   raster fallback because Photoshop group-transform reconstruction is not yet
   implemented;
 - text layout can differ slightly between Chromium and Photoshop;
-- a pseudo-element that paints beyond its originating element's measured box
-  can be clipped by the local backdrop capture;
+- pseudo-element fallback capture expands up to 128 px beyond the originating
+  element while remaining clipped to the design root; larger painted overflow
+  can still be clipped;
 - isolated blend/filter rendering can differ when the effect depends on pixels
   outside the captured element;
 - CSS stacking-context reconstruction is intentionally conservative;

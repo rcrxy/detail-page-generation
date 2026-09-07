@@ -7,8 +7,8 @@
     "scripts": {
         "build": "node src/build.mjs",
         "demo": "node src/build.mjs --input ./example/index.html --out ./example/output",
-        "check": "node --check src/build.mjs && node --check src/extract.mjs && node --check src/generate-jsx.mjs && node --check test/node-failure-isolation.mjs",
-        "test": "node test/node-failure-isolation.mjs"
+        "check": "node --check src/build.mjs && node --check src/extract.mjs && node --check src/generate-jsx.mjs && node --check test/node-failure-isolation.mjs && node --check test/visual-fidelity.mjs",
+        "test": "node test/node-failure-isolation.mjs && node test/visual-fidelity.mjs"
     },
     "dependencies": {
         "playwright": "^1.55.0"

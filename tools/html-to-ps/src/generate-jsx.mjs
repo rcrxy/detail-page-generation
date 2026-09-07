@@ -7,13 +7,53 @@ function jsLiteral(value) {
         .replace(/\u2029/g, "\\u2029");
 }
 
-function jsxPathLiteral(value) {
-    return jsLiteral(path.resolve(value));
+function packagePath(value, packageDir) {
+    if (!value) return value;
+    const absolutePath = path.isAbsolute(value) ? value : path.resolve(packageDir, value);
+    return path.relative(packageDir, absolutePath).split(path.sep).join("/") || ".";
+}
+
+export function makeScenePortable(scene, packageDir) {
+    const portableScene = structuredClone(scene);
+    portableScene.referenceImage = packagePath(portableScene.referenceImage, packageDir);
+
+    function normalizeNodes(nodes) {
+        for (const node of Array.isArray(nodes) ? nodes : []) {
+            if (node?.image?.assetPath) {
+                node.image.assetPath = packagePath(node.image.assetPath, packageDir);
+                node.image.src = node.image.assetPath;
+            }
+            if (node?.rasterPath) {
+                node.rasterPath = packagePath(node.rasterPath, packageDir);
+            }
+            normalizeNodes(node?.children);
+        }
+    }
+
+    normalizeNodes(portableScene.sections);
+    return portableScene;
+}
+
+function sceneForPhotoshop(scene) {
+    const normalizedScene = structuredClone(scene);
+
+    function normalizeNodes(nodes) {
+        for (const node of Array.isArray(nodes) ? nodes : []) {
+            if (node?.text && typeof node.text.contents === "string") {
+                node.text.contents = node.text.contents.replace(/\r\n|\r|\n/g, "\r");
+            }
+            normalizeNodes(node?.children);
+        }
+    }
+
+    normalizeNodes(normalizedScene.sections);
+    return normalizedScene;
 }
 
 export async function generateJsx({ scene, jsxPath, reportPath, documentName, initialHeight }) {
-    const sceneLiteral = jsLiteral(scene);
-    const reportLiteral = jsxPathLiteral(reportPath);
+    const packageDir = path.dirname(path.resolve(jsxPath));
+    const sceneLiteral = jsLiteral(sceneForPhotoshop(makeScenePortable(scene, packageDir)));
+    const reportLiteral = jsLiteral(packagePath(reportPath, packageDir));
     const documentNameLiteral = jsLiteral(documentName);
 
     const jsx = `
@@ -24,6 +64,7 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
     var REPORT_PATH = ${reportLiteral};
     var DOCUMENT_NAME = ${documentNameLiteral};
     var INITIAL_HEIGHT = ${Math.max(1, Math.round(initialHeight))};
+    var PACKAGE_DIR = new File($.fileName).parent;
 
     var DOC = null;
     var WARNINGS = [];
@@ -64,6 +105,25 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         var id = String(node && node.id || "<no id>");
         var type = String(node && node.type || "<unknown type>");
         return "[section: " + section + "] [element: " + element + "] [id: " + id + "] [type: " + type + "]";
+    }
+
+    function isAbsolutePackagePath(value) {
+        var text = String(value || "");
+        if (text.length === 0) return false;
+        var first = text.charCodeAt(0);
+        if (first === 47 || first === 92) return true;
+        if (text.length >= 3 && text.charCodeAt(1) === 58 && (text.charCodeAt(2) === 47 || text.charCodeAt(2) === 92)) {
+            return true;
+        }
+        return false;
+    }
+
+    function resolvePackagePath(filePath) {
+        var value = String(filePath || "");
+        if (isAbsolutePackagePath(value)) {
+            return value;
+        }
+        return PACKAGE_DIR.fsName + "/" + value;
     }
 
     function normalizeFontName(value) {
@@ -312,9 +372,9 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
     }
 
     function placeEmbedded(filePath) {
-        var file = new File(filePath);
+        var file = new File(resolvePackagePath(filePath));
         if (!file.exists) {
-            throw new Error("Missing file: " + filePath);
+            throw new Error("Missing file: " + file.fsName);
         }
 
         var idPlace = charIDToTypeID("Plc ");
@@ -930,7 +990,7 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
 
     function writeReport(fatalMessage) {
         try {
-            var file = new File(REPORT_PATH);
+            var file = new File(resolvePackagePath(REPORT_PATH));
             file.encoding = "UTF8";
             if (!file.open("w")) return;
 
