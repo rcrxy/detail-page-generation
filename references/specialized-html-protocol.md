@@ -5,9 +5,10 @@ Version: `0.1-draft`
 This document defines the intermediate HTML format used between an approved
 browser design and `tools/html-to-ps`.
 
-The specialized HTML is a generated handoff artifact. It may restructure the
-source DOM and CSS to express a useful Photoshop layer tree, but it must retain
-the approved browser result as closely as practical.
+The specialized HTML is a generated, browser-renderable low-level visual IR.
+It is not an annotated source document. AI may replace the complete source DOM
+and CSS implementation, but the resulting pixels, content, geometry, and asset
+identity must remain equivalent to the approved source render.
 
 ## Pipeline position
 
@@ -30,13 +31,20 @@ designs.
 
 ## Status and capability boundary
 
-This protocol is the target contract for the specialization stage. It includes:
+This protocol is the required contract for the specialization stage. The main
+path grammar is intentionally small:
 
-- existing `data-ps-*` hints already consumed by html-to-ps 0.0.1;
-- source-trace attributes for generated handoff HTML;
-- structural conventions that a later converter revision must validate;
-- shape semantics that require native Photoshop shape support before they can
-  be considered faithfully implemented.
+```text
+group
+text
+image
+shape
+raster
+```
+
+The main path does not depend on the converter rediscovering arbitrary browser
+components. Explicit roles, groups, pixel geometry, and source trace are part
+of the IR contract. Legacy CSS inference remains a compatibility fallback only.
 
 A specialized file must declare the protocol version and any converter
 capabilities it requires. The converter must not silently claim support for a
@@ -92,14 +100,13 @@ The root declares the specialization protocol:
 </main>
 ```
 
-When the file relies on capabilities beyond html-to-ps 0.0.1, declare them as
-a space-separated list:
+Declare required converter capabilities as a space-separated list:
 
 ```html
 <main
   id="detail-page"
   data-ps-specialized-version="0.1"
-  data-ps-required-capabilities="shape-stroke shape-rounded-rectangle"
+  data-ps-required-capabilities="shape-fill shape-ellipse source-trace-report"
 >
   ...
 </main>
@@ -108,8 +115,6 @@ a space-separated list:
 Initial capability names are:
 
 - `shape-fill`
-- `shape-stroke`
-- `shape-rounded-rectangle`
 - `shape-ellipse`
 - `source-trace-report`
 - `specialized-fallback-boundary`
@@ -121,34 +126,36 @@ capabilities must not be declared as required.
 
 Keep each kind of information in one authoritative place:
 
-- Chromium determines final bounds, computed styles, text content, image
-  source, transforms, and paint geometry.
-- CSS in the specialized document determines the visible appearance.
-- `data-ps-*` attributes determine layer intent, naming, grouping, source
-  traceability, and explicit fallback boundaries.
+- The approved source render determines the required visual result.
+- CSS in the specialized document determines the IR browser render used by the
+  Visual Gate.
+- Explicit `data-ps-*` attributes determine primitive role, layer intent,
+  grouping, source traceability, and fallback boundaries.
+- Chromium reads the specialized document's final bounds and computed values;
+  it does not infer the original design layout intent.
 - The converter determines whether the requested Photoshop reconstruction is
   supported and faithful.
 - The generated scene records what was actually applied.
 
-Do not duplicate computed coordinates, colors, font sizes, transforms, or
-opacity into semantic attributes. Duplicated visual values can drift away from
-the rendered CSS.
+Visual values belong in specialized CSS. Geometry and typography should be
+explicit px values rather than percentages, relative units, inherited values,
+CSS variables, or layout calculations.
 
-## Existing handoff semantics
+## Primitive semantics
 
-The following existing attributes retain their current meanings:
+The following attributes define the main primitive grammar:
 
 - `data-ps-group="Layer group name"`
 - `data-ps-name="Layer name"`
-- `data-ps-role="text|image|shape"`
+- `data-ps-role="text|image|shape|raster"`
 - `data-ps-ignore`
 - `data-ps-flatten`
 - `data-ps-font-postscript="ExactPostScriptName"`
 - `data-ps-text-mode="point|paragraph"`
 
-Specialization does not make these attributes inherently trustworthy. The
-converter must validate enum values, element compatibility, and supported
-Photoshop behavior.
+Every visible leaf primitive must declare a role. Every top-level section must
+declare `data-ps-group`. `data-ps-role="raster"` and `data-ps-flatten` identify
+the smallest faithful local fallback boundary.
 
 `data-ps-ignore`, `data-ps-flatten`, and `data-ps-font-postscript` are
 high-impact instructions. Their use is restricted by
@@ -198,7 +205,8 @@ Defined trace attributes:
 
 Initial rewrite operation names:
 
-- `annotate-only`
+- `copy-primitive`
+- `lower-layout`
 - `group-layer-tree`
 - `split-background`
 - `split-border`
@@ -216,8 +224,9 @@ handoff report when `source-trace-report` is supported.
 
 ## Layer-tree semantics
 
-Use DOM nesting to express intended Photoshop group nesting only when that
-nesting does not change the browser render.
+Use DOM nesting to express intended Photoshop group nesting. Group nodes do not
+carry implicit layout semantics; their child primitives must already have
+explicit final geometry.
 
 Use `data-ps-group` for meaningful Photoshop groups, including:
 
@@ -227,10 +236,10 @@ Use `data-ps-group` for meaningful Photoshop groups, including:
 - a card or panel whose children should remain grouped;
 - a generated set of background, border, content, and decoration layers.
 
-Do not preserve every browser layout wrapper as a Photoshop group. Wrappers
-whose only purpose is Flexbox, Grid, centering, measurement, or CSS scoping may
-remain ungrouped or be removed in the specialized copy when their rendered
-result remains unchanged.
+Remove browser wrappers whose only purpose is Flexbox, Grid, centering,
+measurement, or CSS scoping. Section groups are `position: relative` with an
+explicit 1500 px width and px height; section children should normally be
+absolutely positioned primitives.
 
 The DOM order and computed stacking order must continue to reproduce the
 approved browser paint order. Layer naming must not be used as a substitute for
@@ -248,29 +257,25 @@ A generated or source-derived editable shape uses:
 ></div>
 ```
 
-Initial shape kinds are:
+Protocol 0.1 main-path shape kinds are:
 
 - `rectangle`
-- `rounded-rectangle`
 - `ellipse`
 
 The element's computed CSS remains authoritative for:
 
 - bounds;
 - background fill;
-- border color, width, style, and alpha;
-- corner radius;
 - opacity;
 - transform.
 
-The converter must validate that the CSS can be represented by the requested
-shape kind. Unsupported asymmetric borders, per-corner geometry, non-solid
-strokes, complex transforms, or effects must degrade locally and be reported.
+Shapes use a solid fill. Protocol 0.1 does not require native stroke or rounded
+rectangle support. Unsupported effects must degrade locally and be reported.
 
-### Border decomposition
+### Straight border and grid decomposition
 
-When a source element combines content and a border, the specialized copy may
-split the border into an independent overlay shape:
+Lower straight borders, dividers, underlines, and grid lines into filled
+rectangle primitives. Do not preserve CSS border semantics in the main path:
 
 ```html
 <div
@@ -279,10 +284,10 @@ split the border into an independent overlay shape:
   data-ps-source-id="source-card-02"
 >
   <div
-    class="feature-card__ps-border"
+    class="feature-card__ps-line"
     data-ps-role="shape"
-    data-ps-shape-kind="rounded-rectangle"
-    data-ps-name="Card border"
+    data-ps-shape-kind="rectangle"
+    data-ps-name="Bottom border"
     data-ps-source-id="source-card-02"
     data-ps-generated="true"
     data-ps-origin-part="border"
@@ -299,27 +304,21 @@ split the border into an independent overlay shape:
   border: 0;
 }
 
-.feature-card__ps-border {
+.feature-card__ps-line {
   position: absolute;
-  inset: 0;
-  box-sizing: border-box;
-  border: 4px solid #c8a26b;
-  border-radius: 24px;
-  background: transparent;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: #c8a26b;
   pointer-events: none;
 }
 ```
 
-The generated border node must cover the same border box and paint at the same
-stacking position as the source border. Removing the original border must not
-change box sizing, content position, or outer dimensions. Preserve the source
-space with equivalent padding, explicit dimensions, or another layout-neutral
-method when needed.
-
-`shape-stroke` and, when applicable, `shape-rounded-rectangle` must be listed
-as required capabilities. Until the JSX generator creates these faithfully,
-the converter must warn, reject, or use a local rendered fallback rather than
-pretending the border is editable.
+Use one narrow rectangle for each visible edge. Removing the source border must
+not change content position, outer dimensions, or stacking. Rounded, patterned,
+image-based, or otherwise complex borders use the smallest local fallback until
+a later protocol version defines a faithful primitive.
 
 ## Pseudo-element materialization
 
@@ -358,6 +357,15 @@ The specialization must preserve:
 - computed font face and fallback behavior;
 - final wrapping and alignment;
 - text opacity and transforms.
+
+Every text primitive must explicitly set `font-family`, `font-size`,
+`line-height`, and `letter-spacing`, using px for numeric values. Do not author
+`font-weight` or the `font` shorthand. Select a real face such as Bold, Heavy,
+Black, Medium, or Light through `font-family`, and do not invent a PostScript
+font name.
+
+Text primitives must not carry backgrounds, borders, shadows, or layout
+container responsibilities. Split those visual parts into sibling primitives.
 
 Do not split individual characters merely to reproduce tracking, ordinary line
 wrapping, or effects that should remain one text layer or one local fallback.
@@ -443,9 +451,9 @@ The converter should report:
 One invalid specialized node must not prevent unrelated sibling nodes or later
 sections from converting.
 
-## Visual validation
+## Visual Gate
 
-The minimum visual validation compares:
+Conversion must compare:
 
 ```text
 source HTML browser render
@@ -453,13 +461,13 @@ source HTML browser render
 specialized HTML browser render
 ```
 
-Compare the complete `#detail-page` at 1500 px and
-`deviceScaleFactor: 1`. A later PSD comparison does not replace this check:
-otherwise a specialization error can be mistaken for a converter success.
+Compare the complete `#detail-page` at 1500 px and `deviceScaleFactor: 1` using
+the same browser, context, viewport, and font environment. The gate must check
+root dimensions, normalized visible text, source image inventory, and full-root
+pixel difference. Thresholds must be explicit and reported.
 
-Pixel comparison is evidence, not permission to alter content. Review visible
-differences around text rasterization, fractional geometry, filters, and font
-loading before deciding whether a mismatch is acceptable.
+Failure is a hard stop before scene or JSX output. Only the specialized file
+may be changed to repair a failed gate. The approved source must remain frozen.
 
 ## Regeneration rule
 

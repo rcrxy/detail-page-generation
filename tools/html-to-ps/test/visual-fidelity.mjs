@@ -66,6 +66,7 @@ try {
         input: inputPath,
         outputDir,
         headless: true,
+        validateProtocol: false,
     });
 
     const multiline = findNode(scene.sections, node => node.name === "Multiline");
@@ -105,7 +106,7 @@ try {
 
     const portableScene = makeScenePortable(scene, outputDir);
     const packagedImage = findNode(portableScene.sections, node => node.name === "Portable image");
-    assert.equal(portableScene.referenceImage, "reference.png");
+    assert.equal(portableScene.version, "0.1.0");
     assert.ok(portableImage?.image?.assetPath, "test image must be materialized into the package");
     assert.match(packagedImage.image.assetPath, /^assets\//);
     assert.equal(packagedImage.image.src, packagedImage.image.assetPath);

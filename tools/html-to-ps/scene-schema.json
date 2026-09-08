@@ -1,11 +1,21 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "title": "html-to-ps scene 0.0.1",
+    "title": "html-to-ps scene 0.1.0",
     "type": "object",
-    "required": ["version", "canvas", "rootSelector", "referenceImage", "sections", "warnings"],
+    "required": [
+        "version",
+        "canvas",
+        "rootSelector",
+        "specialization",
+        "approvedReferenceImage",
+        "specializedReferenceImage",
+        "referenceImage",
+        "sections",
+        "warnings"
+    ],
     "properties": {
         "version": {
-            "const": "0.0.1"
+            "const": "0.1.0"
         },
         "canvas": {
             "type": "object",
@@ -24,6 +34,45 @@
         },
         "referenceImage": {
             "type": "string"
+        },
+        "approvedReferenceImage": {
+            "type": "string"
+        },
+        "specializedReferenceImage": {
+            "type": "string"
+        },
+        "specialization": {
+            "type": "object",
+            "required": ["protocolVersion", "requiredCapabilities", "sourceDigest", "visualValidation"],
+            "properties": {
+                "protocolVersion": {
+                    "const": "0.1"
+                },
+                "requiredCapabilities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
+                "sourceDigest": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "visualValidation": {
+                    "type": "object",
+                    "required": ["pass", "reportPath"],
+                    "properties": {
+                        "pass": {
+                            "const": true
+                        },
+                        "reportPath": {
+                            "type": "string",
+                            "minLength": 1
+                        }
+                    }
+                }
+            }
         },
         "rootSelector": {
             "type": "string",
@@ -185,8 +234,11 @@
         },
         "shape": {
             "type": "object",
-            "required": ["fill", "borderColor", "borderWidth", "borderRadius"],
+            "required": ["kind", "fill", "borderColor", "borderWidth", "borderRadius"],
             "properties": {
+                "kind": {
+                    "enum": ["rectangle", "ellipse"]
+                },
                 "fill": {
                     "oneOf": [
                         {
@@ -243,7 +295,8 @@
                 "image",
                 "shape",
                 "rasterPath",
-                "fallbackReason"
+                "fallbackReason",
+                "sourceTrace"
             ],
             "properties": {
                 "id": {
@@ -322,6 +375,16 @@
                 },
                 "fallbackReason": {
                     "type": ["string", "null"]
+                },
+                "sourceTrace": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/sourceTrace"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
                 },
                 "requiredBottom": {
                     "type": "number"
@@ -402,6 +465,27 @@
                     }
                 }
             ]
+        },
+        "sourceTrace": {
+            "type": "object",
+            "required": ["sourceId", "origin", "generated", "originPart", "rewrite"],
+            "properties": {
+                "sourceId": {
+                    "type": ["string", "null"]
+                },
+                "origin": {
+                    "type": ["string", "null"]
+                },
+                "generated": {
+                    "type": "boolean"
+                },
+                "originPart": {
+                    "type": ["string", "null"]
+                },
+                "rewrite": {
+                    "type": ["string", "null"]
+                }
+            }
         }
     }
 }

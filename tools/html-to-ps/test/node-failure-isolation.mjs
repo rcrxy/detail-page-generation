@@ -30,6 +30,7 @@ try {
         input: inputPath,
         outputDir,
         headless: true,
+        validateProtocol: false,
     });
 
     const section = scene.sections[0];

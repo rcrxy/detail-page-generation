@@ -16,6 +16,14 @@ function packagePath(value, packageDir) {
 export function makeScenePortable(scene, packageDir) {
     const portableScene = structuredClone(scene);
     portableScene.referenceImage = packagePath(portableScene.referenceImage, packageDir);
+    portableScene.approvedReferenceImage = packagePath(portableScene.approvedReferenceImage, packageDir);
+    portableScene.specializedReferenceImage = packagePath(portableScene.specializedReferenceImage, packageDir);
+    if (portableScene.specialization?.visualValidation?.reportPath) {
+        portableScene.specialization.visualValidation.reportPath = packagePath(
+            portableScene.specialization.visualValidation.reportPath,
+            packageDir,
+        );
+    }
 
     function normalizeNodes(nodes) {
         for (const node of Array.isArray(nodes) ? nodes : []) {
@@ -104,7 +112,11 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         var element = String(node && (node.locator || node.name || node.id) || "<unknown element>");
         var id = String(node && node.id || "<no id>");
         var type = String(node && node.type || "<unknown type>");
-        return "[section: " + section + "] [element: " + element + "] [id: " + id + "] [type: " + type + "]";
+        var trace = node && node.sourceTrace || {};
+        var sourceId = String(trace.sourceId || "<no source id>");
+        var rewrite = String(trace.rewrite || "<no rewrite>");
+        return "[section: " + section + "] [element: " + element + "] [id: " + id + "] [type: " + type + "]" +
+            " [source: " + sourceId + "] [rewrite: " + rewrite + "]";
     }
 
     function isAbsolutePackagePath(value) {
@@ -492,17 +504,11 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         return layer;
     }
 
-    function createRasterShape(node, parentGroup, sectionName) {
+    function createNativeShape(node, parentGroup, sectionName) {
         var fill = node.shape && node.shape.fill;
         if (!fill || Number(fill.a || 0) <= 0) {
             return null;
         }
-
-        var layer = parentGroup
-            ? parentGroup.artLayers.add()
-            : DOC.artLayers.add();
-
-        layer.name = node.name || "Color Block";
 
         var centerX = Number(node.bounds.x) + Number(node.bounds.width) / 2;
         var centerY = Number(node.bounds.y) + Number(node.bounds.height) / 2;
@@ -514,16 +520,36 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         var x2 = centerX + width / 2;
         var y2 = centerY + height / 2;
 
-        DOC.activeLayer = layer;
-        DOC.selection.select([
-            [px(x1), px(y1)],
-            [px(x2), px(y1)],
-            [px(x2), px(y2)],
-            [px(x1), px(y2)]
-        ]);
+        var makeDescriptor = new ActionDescriptor();
+        var classReference = new ActionReference();
+        classReference.putClass(stringIDToTypeID("contentLayer"));
+        makeDescriptor.putReference(charIDToTypeID("null"), classReference);
 
-        DOC.selection.fill(solidColor(fill));
-        DOC.selection.deselect();
+        var contentDescriptor = new ActionDescriptor();
+        var colorDescriptor = new ActionDescriptor();
+        colorDescriptor.putDouble(charIDToTypeID("Rd  "), Number(fill.r || 0));
+        colorDescriptor.putDouble(charIDToTypeID("Grn "), Number(fill.g || 0));
+        colorDescriptor.putDouble(charIDToTypeID("Bl  "), Number(fill.b || 0));
+
+        var solidFillDescriptor = new ActionDescriptor();
+        solidFillDescriptor.putObject(charIDToTypeID("Clr "), charIDToTypeID("RGBC"), colorDescriptor);
+        contentDescriptor.putObject(charIDToTypeID("Type"), stringIDToTypeID("solidColorLayer"), solidFillDescriptor);
+
+        var pathDescriptor = new ActionDescriptor();
+        pathDescriptor.putUnitDouble(charIDToTypeID("Top "), charIDToTypeID("#Pxl"), y1);
+        pathDescriptor.putUnitDouble(charIDToTypeID("Left"), charIDToTypeID("#Pxl"), x1);
+        pathDescriptor.putUnitDouble(charIDToTypeID("Btom"), charIDToTypeID("#Pxl"), y2);
+        pathDescriptor.putUnitDouble(charIDToTypeID("Rght"), charIDToTypeID("#Pxl"), x2);
+
+        var shapeKind = String(node.shape && node.shape.kind || "rectangle").toLowerCase();
+        var pathClass = shapeKind === "ellipse" ? charIDToTypeID("Elps") : charIDToTypeID("Rctn");
+        contentDescriptor.putObject(charIDToTypeID("Shp "), pathClass, pathDescriptor);
+        makeDescriptor.putObject(charIDToTypeID("Usng"), stringIDToTypeID("contentLayer"), contentDescriptor);
+        executeAction(charIDToTypeID("Mk  "), makeDescriptor, DialogModes.NO);
+
+        var layer = DOC.activeLayer;
+        layer.name = node.name || (shapeKind === "ellipse" ? "Ellipse" : "Rectangle");
+        moveInto(layer, parentGroup, node, sectionName);
 
         var combinedOpacity =
             Number(node.opacity == null ? 1 : node.opacity) *
@@ -533,20 +559,6 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
 
         if (node.rotation && Math.abs(node.rotation) > 0.001) {
             layer.rotate(Number(node.rotation), AnchorPosition.MIDDLECENTER);
-        }
-
-        if (node.shape && Number(node.shape.borderWidth || 0) > 0) {
-            warn(
-                nodeContext(node, sectionName) + " Border on '" + node.name +
-                "' is not reconstructed natively in html-to-ps 0.0.1."
-            );
-        }
-
-        if (node.shape && Number(node.shape.borderRadius || 0) > 0) {
-            warn(
-                nodeContext(node, sectionName) + " Border radius on '" + node.name +
-                "' is not reconstructed natively in html-to-ps 0.0.1."
-            );
         }
 
         return layer;
@@ -927,7 +939,7 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         }
 
         if (node.type === "shape") {
-            return createRasterShape(node, parentGroup, sectionName);
+            return createNativeShape(node, parentGroup, sectionName);
         }
 
         throw new Error("Unsupported node type: " + node.type);
@@ -950,10 +962,10 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         ensureCanvasHeight(SCENE.canvas.height);
 
         var referenceNode = {
-            id: "browser-reference",
+            id: "approved-reference",
             type: "raster",
-            name: "[REFERENCE] Browser Render - DO NOT EDIT",
-            locator: "reference.png",
+            name: "[REFERENCE] Approved Design - DO NOT EDIT",
+            locator: String(SCENE.approvedReferenceImage || SCENE.referenceImage || "source-reference.png"),
             bounds: {
                 x: 0,
                 y: 0,
@@ -966,7 +978,7 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         var layer = createSmart(
             referenceNode,
             null,
-            SCENE.referenceImage,
+            SCENE.approvedReferenceImage || SCENE.referenceImage,
             SCENE.canvas.width,
             SCENE.canvas.height,
             0,
@@ -975,7 +987,7 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
 
         if (!layer) return;
 
-        layer.name = "[REFERENCE] Browser Render - DO NOT EDIT";
+        layer.name = "[REFERENCE] Approved Design - DO NOT EDIT";
         layer.visible = false;
 
         try {
@@ -983,7 +995,7 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         } catch (lockError) {
             warn(
                 nodeContext(referenceNode, "<reference>") +
-                " Could not lock the browser reference layer: " + safeMessage(lockError)
+                " Could not lock the approved design reference layer: " + safeMessage(lockError)
             );
         }
     }
@@ -999,6 +1011,10 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
             file.writeln("");
             file.writeln("Target: Photoshop 2024");
             file.writeln("Canvas: " + SCENE.canvas.width + "px wide / 72 PPI");
+            file.writeln("Scene schema: " + String(SCENE.version || "unknown"));
+            file.writeln("Specialized protocol: " + String(SCENE.specialization && SCENE.specialization.protocolVersion || "unknown"));
+            file.writeln("Source digest: " + String(SCENE.specialization && SCENE.specialization.sourceDigest || "unknown"));
+            file.writeln("Visual Gate: " + String(SCENE.specialization && SCENE.specialization.visualValidation && SCENE.specialization.visualValidation.pass ? "PASS" : "UNKNOWN"));
             file.writeln("");
 
             if (fatalMessage) {
@@ -1081,7 +1097,7 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         try {
             placeReference();
         } catch (referenceError) {
-            fail("[section: <reference>] [element: browser reference] Placement failed. " + safeMessage(referenceError));
+            fail("[section: <reference>] [element: approved design reference] Placement failed. " + safeMessage(referenceError));
         }
 
         writeReport(null);
@@ -1097,7 +1113,7 @@ export async function generateJsx({ scene, jsxPath, reportPath, documentName, in
         } else {
             alert(
                 "html-to-ps handoff completed.\\n\\n" +
-                "The browser reference layer was added at the top and hidden.\\n" +
+                "The approved design reference layer was added at the top and hidden.\\n" +
                 "Continue all subsequent editing in Photoshop.",
                 "html-to-ps"
             );

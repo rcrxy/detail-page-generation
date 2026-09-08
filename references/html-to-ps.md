@@ -31,16 +31,15 @@ degrade locally rather than change the approved design.
 Conversion must use an independent Photoshop-specialized HTML file rather than
 the approved source file directly.
 
-The specialized file is allowed to:
+The specialized file is required to:
 
-- add layer names, groups, roles, source mapping, and fallback hints;
-- embed the CSS required by the current extractor;
-- materialize browser-only visuals such as simple pseudo-elements;
-- split a browser box into meaningful Photoshop parts such as background,
-  border, content, and decoration;
-- remove or reorganize layout-only wrappers when the browser result remains
-  unchanged;
-- isolate the smallest unsupported visual for rendered fallback.
+- define explicit groups and `text`, `image`, `shape`, or `raster` leaves;
+- embed all CSS required for a deterministic standalone render;
+- replace browser layout with explicit px geometry;
+- split compound boxes into independent visual primitives;
+- materialize browser-only visuals such as pseudo-elements;
+- lower straight borders, dividers, and grids to rectangle fills;
+- isolate only the smallest unsupported visual for rendered fallback.
 
 It must not alter the approved content or visual design. The source HTML remains
 the design source of truth, and the specialized file is regenerated or
@@ -116,9 +115,10 @@ Photoshop does not perform layout.
 
 Chromium performs layout first, then the extractor records the final geometry.
 
-The prototype may freely use Flex, Grid, percentages, transforms, `calc()`, and
-other browser layout features. The converter should consume their rendered
-result rather than require Photoshop equivalents or restrict the composition.
+The source design may freely use Flex, Grid, percentages, transforms, `calc()`,
+and other browser layout features. The specialized document lowers their final
+rendered result to explicit px geometry. The converter consumes that controlled
+IR and uses arbitrary-CSS interpretation only as a compatibility fallback.
 
 Scene fields and Photoshop reconstruction details are defined by
 `tools/html-to-ps/scene-schema.json` and `tools/html-to-ps/README.md`.
@@ -153,9 +153,9 @@ Supported hints in the POC:
 - `data-ps-font-postscript`
 - `data-ps-text-mode="point|paragraph"`
 
-These attributes are optional handoff hints, not a required authoring grammar.
-They are optional in the source HTML and selectively generated in the
-specialized HTML. Use them only when they communicate useful handoff intent.
+These attributes are optional in the source HTML and required where applicable
+in the specialized primitive grammar. The design source must not be constrained
+by them.
 `data-ps-flatten` explicitly chooses one local rendered Smart Object; it must
 not be added merely to compensate for a converter defect that can be fixed in
 the tool.
@@ -196,20 +196,25 @@ The Photoshop document remains 1500 px wide at 72 PPI and grows downward while
 top-level sections are imported. Canvas-resize mechanics belong to the
 converter and must not influence the page composition.
 
-## Browser reference layer
+## Approved reference layer
 
-The root element is rendered to `reference.png`.
+The approved source root is rendered to `source-reference.png`. The specialized
+root is separately rendered to `specialized-reference.png` for the Visual Gate.
 
 After all editable content is created, the generated JSX places that image at
 the top of the Photoshop layer stack as:
 
-`[REFERENCE] Browser Render - DO NOT EDIT`
+`[REFERENCE] Approved Design - DO NOT EDIT`
 
 The layer is:
 
 - hidden by default;
+- locked when Photoshop permits it;
 - intended only for visual comparison;
 - not used as the editable source.
+
+`specialized-reference.png` is a validation artifact and must not be placed in
+the PSD.
 
 ## Current POC scope
 

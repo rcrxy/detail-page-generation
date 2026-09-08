@@ -3,10 +3,10 @@
 Use this checklist when generating Photoshop-specialized HTML according to
 `specialized-html-protocol.md`.
 
-The objective is not to redesign the page or mechanically rewrite every CSS
-feature. The objective is to produce the smallest useful structural changes
-that improve Photoshop editability while preserving the approved browser
-render.
+The objective is to transpose the approved browser result into a complete,
+explicit Photoshop-oriented visual IR. Rewrite as much DOM and CSS as needed to
+express stable primitives. Minimize visual differences and fallback boundaries,
+not the amount of rewritten code.
 
 ## Preconditions
 
@@ -26,34 +26,43 @@ changes before generating the handoff copy.
 
 ## Decision order
 
-For each meaningful visual component, choose the first faithful option:
+Use this order for the whole document:
 
-1. Keep the source structure and add naming or role annotations.
-2. Split a source element into a small number of independently editable layers.
-3. Materialize a browser-only visual such as a pseudo-element as a real node.
-4. Restructure layout-only wrappers without changing rendered geometry.
-5. Isolate the smallest unsupported visual as a rendered fallback.
-6. Leave the original structure for converter inference when specialization
-   would be more fragile than the source.
+1. Confirm the approved source render and freeze the source.
+2. Identify intended Photoshop groups and editable layer semantics.
+3. Decompose every visible component into `text`, `image`, `shape`, or
+      smallest-boundary `raster` primitives.
+4. Replace Flex/Grid/flow results with explicit px geometry.
+5. Split compound elements such as text plus background into sibling
+      primitives.
+6. Materialize pseudo-elements and other browser-only visuals.
+7. Lower straight borders, dividers, and grids to rectangle fills.
+8. Create the complete independent specialized HTML.
+9. Render source and specialized documents under the same browser conditions.
+10. Run the Visual Gate; on failure, modify only the specialized document.
 
-Do not rewrite an element merely because a rewrite is possible.
+Copy source structure only when it already conforms to the primitive grammar.
+Do not leave arbitrary source structure for converter inference as a normal
+path.
 
 ## Risk levels
 
-### Low-risk rewrites
+### Required lowering work
 
-AI may perform these by default when the intent is clear:
+AI performs these whenever the source uses a higher-level expression:
 
 - copy the source HTML to an independent specialized file;
 - inline a local stylesheet into a `<style>` element without changing rule
   order, specificity, URLs, or computed styles;
 - add `data-ps-name` to meaningful text, image, shape, and fallback layers;
 - add `data-ps-group` to meaningful section or component groups;
-- add `data-ps-role` when the node's role is unambiguous;
+- add an explicit `data-ps-role` to every visible leaf primitive;
 - add source-trace attributes;
 - materialize a simple decorative `::before` or `::after` as a real element;
 - split a simple solid background from content when its geometry is stable;
-- split a uniform solid border into an independent shape node;
+- lower a uniform straight border into one rectangle per visible edge;
+- expand Flex, Grid, percentage, relative-unit, variable, inherited, and
+      calculated geometry into explicit px bounds;
 - remove a layout-only wrapper when the same final geometry and stacking can be
   preserved exactly;
 - add handoff-only CSS selectors scoped to the specialized document.
@@ -146,7 +155,7 @@ or an unavoidable fidelity reason recorded in the specialized file:
 - [ ] Preserve the original box model after removing the source border.
 - [ ] Preserve the original stacking position relative to content and
       backgrounds.
-- [ ] Declare `shape-stroke` and any required radius capability.
+- [ ] Express each straight edge as a solid rectangle fill.
 - [ ] Use local fallback for asymmetric, patterned, image-based, filtered, or
       otherwise unsupported borders.
 
@@ -206,38 +215,37 @@ or an unavoidable fidelity reason recorded in the specialized file:
 
 ## Controlled rewrite patterns
 
-### Pattern: annotate without restructuring
+### Pattern: copy an existing primitive
 
-Use when the rendered element already maps cleanly to one Photoshop layer.
+Use only when the rendered element already satisfies the complete primitive
+contract and maps cleanly to one Photoshop layer.
 
 ```html
 <h2
   data-ps-role="text"
   data-ps-name="Selling point title"
-  data-ps-rewrite="annotate-only"
+      data-ps-rewrite="copy-primitive"
 >
   Lightweight comfort
 </h2>
 ```
 
-Do not wrap it in a new element unless grouping or visual separation requires
-one.
+Make its geometry and typography explicit even when its DOM tag is retained.
 
-### Pattern: split border from content
+### Pattern: lower border to rectangle fills
 
-Use when one browser box should become a content group plus an editable
-Photoshop stroke shape.
+Use for straight solid borders, dividers, underlines, and grid lines.
 
 Required checks:
 
-- the overlay matches the original border box;
+- each rectangle matches one visible border edge;
 - removing the original border does not move content;
-- radius and border alpha remain identical;
+- fill alpha remains identical;
 - the border does not cover content differently;
 - required shape capabilities are declared.
 
-Do not use this pattern for asymmetric borders until the protocol and converter
-support them explicitly.
+Do not use CSS border or stroke semantics in the 0.1 main path. Complex rounded
+or patterned borders use a minimal fallback.
 
 ### Pattern: materialize pseudo-element
 
@@ -298,6 +306,12 @@ The specialization stage must not:
 - hide unsupported content with `data-ps-ignore`;
 - flatten the complete page as a conversion strategy;
 - treat the specialized HTML as the new long-term design source.
+
+The specialized main path must not use Flex, Grid, gap, percentages, viewport
+units, relative geometry units, `calc()`, visual CSS variables,
+pseudo-elements, editable CSS borders, complex background stacks, shadows,
+filters, masks, clip paths, blend modes, skew, or complex transforms. Lower
+them to primitives or isolate the smallest faithful raster fallback.
 
 ## Conflict rules
 

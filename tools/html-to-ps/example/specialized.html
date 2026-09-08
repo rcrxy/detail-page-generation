@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8" />
+        <title>html-to-ps specialized example</title>
+        <style>
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                margin: 0;
+                background: #d8d1c7;
+            }
+            body {
+                font-family: "Microsoft YaHei", sans-serif;
+            }
+            #detail-page {
+                position: relative;
+                width: 1500px;
+                margin: 0 auto;
+                overflow: hidden;
+                background: #f2eee7;
+            }
+            section {
+                position: relative;
+                width: 1500px;
+                overflow: hidden;
+            }
+            .hero {
+                height: 1450px;
+                color: #f7f1e8;
+            }
+            .hero-bg {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 1500px;
+                height: 1450px;
+                background: #211f1d;
+            }
+            .eyebrow {
+                position: absolute;
+                left: 120px;
+                top: 130px;
+                margin: 0;
+                font-family: Arial, sans-serif;
+                font-size: 40px;
+                line-height: 52px;
+                letter-spacing: 6px;
+                color: #cfc5b8;
+            }
+            h1 {
+                position: absolute;
+                left: 120px;
+                top: 250px;
+                margin: 0;
+                font-family: "Arial Black", "Microsoft YaHei", sans-serif;
+                font-size: 132px;
+                line-height: 150px;
+                letter-spacing: 1px;
+                color: #fff;
+            }
+            .subtitle {
+                position: absolute;
+                left: 126px;
+                top: 450px;
+                width: 760px;
+                margin: 0;
+                font-family: "Microsoft YaHei", sans-serif;
+                font-size: 56px;
+                line-height: 78px;
+                letter-spacing: 2px;
+                color: #ddd2c4;
+            }
+            .product {
+                display: block;
+            }
+            .main-product {
+                position: absolute;
+                left: 610px;
+                top: 630px;
+                width: 760px;
+                height: 507px;
+            }
+            .feature {
+                height: 1650px;
+                color: #211f1d;
+            }
+            .feature-bg {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 1500px;
+                height: 1650px;
+                background: #f2eee7;
+            }
+            .index {
+                position: absolute;
+                left: 116px;
+                top: 140px;
+                margin: 0;
+                font-family: "Arial Black", sans-serif;
+                font-size: 120px;
+                line-height: 130px;
+                letter-spacing: 0px;
+                color: #b35e49;
+            }
+            h2 {
+                position: absolute;
+                left: 120px;
+                top: 330px;
+                margin: 0;
+                font-family: "Arial Black", "Microsoft YaHei", sans-serif;
+                font-size: 104px;
+                line-height: 126px;
+                letter-spacing: 0px;
+                color: #211f1d;
+            }
+            .copy {
+                position: absolute;
+                left: 120px;
+                top: 500px;
+                width: 780px;
+                margin: 0;
+                font-family: "Microsoft YaHei", sans-serif;
+                font-size: 56px;
+                line-height: 82px;
+                letter-spacing: 1px;
+                color: #4f4a44;
+            }
+            .rotated-product {
+                position: absolute;
+                left: 710px;
+                top: 760px;
+                width: 620px;
+                height: 413px;
+                transform: rotate(-9deg);
+            }
+            .accent-line {
+                position: absolute;
+                left: 120px;
+                top: 690px;
+                width: 460px;
+                height: 8px;
+                background: #b35e49;
+            }
+            .accent-dot {
+                position: absolute;
+                left: 570px;
+                top: 665px;
+                width: 58px;
+                height: 58px;
+                border-radius: 50%;
+                background: #b35e49;
+            }
+            .detail-callout {
+                position: absolute;
+                left: 180px;
+                top: 910px;
+                width: 360px;
+                height: 360px;
+                overflow: hidden;
+                border: 10px solid #b35e49;
+                border-radius: 180px;
+                background: #fff;
+            }
+            .detail-callout img {
+                position: absolute;
+                left: -180px;
+                top: -10px;
+                width: 720px;
+                height: 480px;
+            }
+        </style>
+    </head>
+    <body>
+        <main
+            id="detail-page"
+            data-ps-specialized-version="0.1"
+            data-ps-source="./source.html"
+            data-ps-required-capabilities="shape-fill shape-ellipse source-trace-report specialized-fallback-boundary">
+            <section class="hero" data-ps-group="01-Hero" data-ps-source-id="source-hero">
+                <div
+                    class="hero-bg"
+                    data-ps-role="shape"
+                    data-ps-shape-kind="rectangle"
+                    data-ps-name="Hero background"
+                    data-ps-source-id="source-hero-bg"></div>
+                <p class="eyebrow" data-ps-role="text" data-ps-name="Eyebrow" data-ps-source-id="source-eyebrow">
+                    HTML TO PHOTOSHOP HANDOFF
+                </p>
+                <h1 data-ps-role="text" data-ps-name="Main title" data-ps-source-id="source-title">轻盈起舞</h1>
+                <p class="subtitle" data-ps-role="text" data-ps-name="Subtitle" data-ps-source-id="source-subtitle">
+                    浏览器完成设计，Photoshop 接手精修
+                </p>
+                <img
+                    class="product main-product"
+                    data-ps-role="image"
+                    data-ps-name="Main product"
+                    data-ps-source-id="source-main-product"
+                    src="./assets/product-placeholder.png"
+                    alt="商品主图" />
+            </section>
+            <section class="feature" data-ps-group="02-Feature" data-ps-source-id="source-feature">
+                <div
+                    class="feature-bg"
+                    data-ps-role="shape"
+                    data-ps-shape-kind="rectangle"
+                    data-ps-name="Feature background"
+                    data-ps-source-id="source-feature-bg"></div>
+                <p class="index" data-ps-role="text" data-ps-name="Feature index" data-ps-source-id="source-index">01</p>
+                <h2 data-ps-role="text" data-ps-name="Feature title" data-ps-source-id="source-feature-title">稳固抓地</h2>
+                <p class="copy" data-ps-role="text" data-ps-name="Feature copy" data-ps-source-id="source-feature-copy">
+                    这一段用于验证可编辑文字、固定字号、行高、字距以及长页面中的纵向定位。
+                </p>
+                <div
+                    class="accent-line"
+                    data-ps-role="shape"
+                    data-ps-shape-kind="rectangle"
+                    data-ps-name="Accent line"
+                    data-ps-source-id="source-accent-line"></div>
+                <div
+                    class="accent-dot"
+                    data-ps-role="shape"
+                    data-ps-shape-kind="ellipse"
+                    data-ps-name="Accent dot"
+                    data-ps-source-id="source-accent-dot"></div>
+                <img
+                    class="product rotated-product"
+                    data-ps-role="image"
+                    data-ps-name="Rotated product"
+                    data-ps-source-id="source-rotated-product"
+                    src="./assets/product-placeholder.png"
+                    alt="旋转商品图" />
+                <div
+                    class="detail-callout"
+                    data-ps-role="raster"
+                    data-ps-flatten
+                    data-ps-name="Detail crop fallback"
+                    data-ps-source-id="source-detail-callout"
+                    data-ps-rewrite="isolate-fallback"
+                    data-ps-fallback-reason="rounded clipped image composition">
+                    <img src="./assets/product-placeholder.png" alt="" />
+                </div>
+            </section>
+        </main>
+    </body>
+</html>

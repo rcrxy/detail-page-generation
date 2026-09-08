@@ -309,11 +309,22 @@ requested.
 When the user asks for an **editable PSD handoff** of a finished design, use the
 optional `tools/html-to-ps` pipeline (see `references/html-to-ps.md`).
 
-Before starting conversion, always generate an independent
-Photoshop-specialized HTML file. Keep the approved source HTML unchanged. The
-specialized copy may add handoff semantics, embed its required CSS, and
-restructure selected visual parts into a clearer Photoshop layer model while
-preserving the approved browser result.
+Freeze the approved source HTML/CSS/assets before handoff and keep them
+unchanged throughout specialization and compilation. Capture the approved
+source browser render as the visual contract.
+
+Always generate a complete, independent Photoshop-specialized HTML file. This
+file is a browser-renderable low-level visual IR, not an annotated source copy
+and not a new design. AI specialization may completely rewrite its DOM and CSS,
+remove browser-layout wrappers, expand computed layout into explicit pixel
+geometry, split compound elements into primitives, and materialize browser-only
+visuals. It must preserve the approved content and rendered result exactly.
+
+The specialized main path expresses meaningful groups and the primitive roles
+`text`, `image`, `shape`, and `raster`. Straight borders, dividers, and grid
+lines should be lowered to narrow rectangle fills instead of leaving CSS border
+interpretation to the converter. Complex unsupported effects use the smallest
+faithful local fallback.
 
 Follow:
 
@@ -321,15 +332,16 @@ Follow:
 - `references/ai-specialization-rewrites.md` for allowed AI rewrites and
   preservation rules.
 
-Even when no structural rewrite is needed, create the independent specialized
-file and use it as the converter input. In that case the specialization may be
-limited to packaging, source traceability, layer naming, grouping, and role
-annotations.
+Render and compare the approved source and specialized roots before scene
+extraction. The Visual Gate must compare canvas geometry, visible text, source
+image inventory, and full-root pixels. A failed gate stops scene/JSX output and
+may only be repaired by changing the specialized file, never the approved
+source.
 
-The specialized HTML is a generated handoff artifact, not a new design source.
-Regenerate or revalidate it when the approved source changes. Do not silently
-assume converter support for a protocol capability that the current tool README
-does not implement.
+The specialized HTML is disposable. Regenerate and revalidate it whenever the
+approved source changes. The tools validate, compare, extract, and compile the
+specialized document; they do not generate it or silently assume unsupported
+capabilities.
 
 Never reduce or change the visual design to make conversion easier; the pipeline
 degrades locally instead. Current conversion behavior and boundaries live in

@@ -2,23 +2,19 @@
 <html lang="zh-CN">
     <head>
         <meta charset="utf-8" />
-        <title>html-to-ps POC</title>
+        <title>html-to-ps source example</title>
         <style>
             * {
                 box-sizing: border-box;
             }
-
             html,
             body {
                 margin: 0;
-                padding: 0;
                 background: #d8d1c7;
             }
-
             body {
-                font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+                font-family: "Microsoft YaHei", sans-serif;
             }
-
             #detail-page {
                 position: relative;
                 width: 1500px;
@@ -26,36 +22,31 @@
                 overflow: hidden;
                 background: #f2eee7;
             }
-
             section {
                 position: relative;
                 width: 1500px;
                 overflow: hidden;
             }
-
             .hero {
                 height: 1450px;
                 color: #f7f1e8;
             }
-
             .hero-bg {
                 position: absolute;
                 inset: 0;
                 background: #211f1d;
             }
-
             .eyebrow {
                 position: absolute;
                 left: 120px;
                 top: 130px;
                 margin: 0;
-                font-family: "Arial", sans-serif;
+                font-family: Arial, sans-serif;
                 font-size: 40px;
                 line-height: 52px;
                 letter-spacing: 6px;
                 color: #cfc5b8;
             }
-
             h1 {
                 position: absolute;
                 left: 120px;
@@ -65,25 +56,23 @@
                 font-size: 132px;
                 line-height: 150px;
                 letter-spacing: 1px;
-                color: #ffffff;
+                color: #fff;
             }
-
             .subtitle {
                 position: absolute;
                 left: 126px;
                 top: 450px;
                 width: 760px;
                 margin: 0;
+                font-family: "Microsoft YaHei", sans-serif;
                 font-size: 56px;
                 line-height: 78px;
                 letter-spacing: 2px;
                 color: #ddd2c4;
             }
-
             .product {
                 display: block;
             }
-
             .main-product {
                 position: absolute;
                 left: 610px;
@@ -91,29 +80,26 @@
                 width: 760px;
                 height: 507px;
             }
-
             .feature {
                 height: 1650px;
                 color: #211f1d;
             }
-
             .feature-bg {
                 position: absolute;
                 inset: 0;
                 background: #f2eee7;
             }
-
             .index {
                 position: absolute;
                 left: 116px;
                 top: 140px;
                 margin: 0;
-                font-family: "Arial Black", "Microsoft YaHei", sans-serif;
+                font-family: "Arial Black", sans-serif;
                 font-size: 120px;
                 line-height: 130px;
+                letter-spacing: 0px;
                 color: #b35e49;
             }
-
             h2 {
                 position: absolute;
                 left: 120px;
@@ -122,21 +108,21 @@
                 font-family: "Arial Black", "Microsoft YaHei", sans-serif;
                 font-size: 104px;
                 line-height: 126px;
+                letter-spacing: 0px;
                 color: #211f1d;
             }
-
             .copy {
                 position: absolute;
                 left: 120px;
                 top: 500px;
                 width: 780px;
                 margin: 0;
+                font-family: "Microsoft YaHei", sans-serif;
                 font-size: 56px;
                 line-height: 82px;
                 letter-spacing: 1px;
                 color: #4f4a44;
             }
-
             .rotated-product {
                 position: absolute;
                 left: 710px;
@@ -145,7 +131,23 @@
                 height: 413px;
                 transform: rotate(-9deg);
             }
-
+            .accent-line {
+                position: absolute;
+                left: 120px;
+                top: 690px;
+                width: 460px;
+                height: 8px;
+                background: #b35e49;
+            }
+            .accent-dot {
+                position: absolute;
+                left: 570px;
+                top: 665px;
+                width: 58px;
+                height: 58px;
+                border-radius: 50%;
+                background: #b35e49;
+            }
             .detail-callout {
                 position: absolute;
                 left: 180px;
@@ -155,9 +157,8 @@
                 overflow: hidden;
                 border: 10px solid #b35e49;
                 border-radius: 180px;
-                background: #ffffff;
+                background: #fff;
             }
-
             .detail-callout img {
                 position: absolute;
                 left: -180px;
@@ -165,54 +166,26 @@
                 width: 720px;
                 height: 480px;
             }
-
-            .dash {
-                position: absolute;
-                left: 510px;
-                top: 1030px;
-                width: 330px;
-                height: 8px;
-                border-top: 8px dashed #b35e49;
-                transform: rotate(-15deg);
-            }
         </style>
     </head>
     <body>
         <main id="detail-page">
-            <section class="hero" data-ps-group="01-Hero">
-                <div class="hero-bg" data-ps-role="shape" data-ps-name="Hero 背景"></div>
-
-                <p class="eyebrow" data-ps-name="Eyebrow">HTML → PHOTOSHOP HANDOFF</p>
-                <h1 data-ps-name="主标题">轻盈起舞</h1>
-                <p class="subtitle" data-ps-name="副标题">浏览器完成设计，Photoshop 接手精修</p>
-
-                <img
-                    class="product main-product"
-                    data-ps-name="商品主图"
-                    src="./assets/product-placeholder.png"
-                    alt="商品主图" />
+            <section class="hero">
+                <div class="hero-bg"></div>
+                <p class="eyebrow">HTML TO PHOTOSHOP HANDOFF</p>
+                <h1>轻盈起舞</h1>
+                <p class="subtitle">浏览器完成设计，Photoshop 接手精修</p>
+                <img class="product main-product" src="./assets/product-placeholder.png" alt="商品主图" />
             </section>
-
-            <section class="feature" data-ps-group="02-卖点测试">
-                <div class="feature-bg" data-ps-role="shape" data-ps-name="卖点背景"></div>
-
-                <p class="index" data-ps-name="卖点编号">01</p>
-                <h2 data-ps-name="卖点标题">稳固抓地</h2>
-                <p class="copy" data-ps-name="卖点说明">
-                    这一段用于验证可编辑文字、固定字号、行高、字距以及长页面中的纵向定位。
-                </p>
-
-                <img
-                    class="product rotated-product"
-                    data-ps-name="旋转商品图"
-                    src="./assets/product-placeholder.png"
-                    alt="旋转商品图" />
-
-                <div class="detail-callout" data-ps-flatten data-ps-name="局部放大示意">
-                    <img src="./assets/product-placeholder.png" alt="" />
-                </div>
-
-                <div class="dash" data-ps-flatten data-ps-name="虚线连接"></div>
+            <section class="feature">
+                <div class="feature-bg"></div>
+                <p class="index">01</p>
+                <h2>稳固抓地</h2>
+                <p class="copy">这一段用于验证可编辑文字、固定字号、行高、字距以及长页面中的纵向定位。</p>
+                <div class="accent-line"></div>
+                <div class="accent-dot"></div>
+                <img class="product rotated-product" src="./assets/product-placeholder.png" alt="旋转商品图" />
+                <div class="detail-callout"><img src="./assets/product-placeholder.png" alt="" /></div>
             </section>
         </main>
     </body>

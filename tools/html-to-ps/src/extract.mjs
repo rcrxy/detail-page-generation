@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright";
+import { validateSpecializedPage } from "./protocol.mjs";
 
 function safeName(value) {
     return (
@@ -335,27 +336,32 @@ async function annotateRenderedFonts(page, scene) {
     }
 }
 
-export async function extractScene({ input, outputDir, rootSelector = "#detail-page", headless = true }) {
+export async function extractScene({
+    input,
+    page: providedPage,
+    outputDir,
+    rootSelector = "#detail-page",
+    headless = true,
+    validateProtocol = true,
+}) {
     await fs.mkdir(outputDir, { recursive: true });
     await fs.mkdir(path.join(outputDir, "fallback"), { recursive: true });
 
-    let target;
-    if (/^https?:\/\//i.test(input) || /^file:/i.test(input)) {
-        target = input;
-    } else {
-        target = pathToFileURL(path.resolve(input)).href;
+    let browser = null;
+    let page = providedPage;
+    if (!page) {
+        if (!input) throw new Error("extractScene requires either page or input.");
+        const target = /^https?:\/\//i.test(input) || /^file:/i.test(input) ? input : pathToFileURL(path.resolve(input)).href;
+        browser = await chromium.launch({ headless });
+        const context = await browser.newContext({
+            viewport: { width: 1800, height: 1200 },
+            deviceScaleFactor: 1,
+        });
+        page = await context.newPage();
+        await page.goto(target, { waitUntil: "networkidle" });
     }
 
-    const browser = await chromium.launch({ headless });
-    const context = await browser.newContext({
-        viewport: { width: 1800, height: 1200 },
-        deviceScaleFactor: 1,
-    });
-    const page = await context.newPage();
-
     try {
-        await page.goto(target, { waitUntil: "networkidle" });
-
         await page.evaluate(async () => {
             if (document.fonts?.ready) {
                 await document.fonts.ready;
@@ -372,63 +378,9 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
             );
         });
 
-        const fontPolicy = await page.evaluate(() => {
-            const violations = [];
-            const unreadableSheets = [];
-
-            function inspectRules(rules, sheetLabel) {
-                for (const rule of Array.from(rules || [])) {
-                    if (rule.cssRules) {
-                        inspectRules(rule.cssRules, sheetLabel);
-                    }
-                    if (!rule.style) continue;
-
-                    const value = rule.style.getPropertyValue("font-weight");
-                    if (value) {
-                        violations.push({
-                            source: sheetLabel,
-                            selector: rule.selectorText || rule.cssText?.slice(0, 80) || "<rule>",
-                            value,
-                        });
-                    }
-                }
-            }
-
-            for (const sheet of Array.from(document.styleSheets)) {
-                try {
-                    inspectRules(sheet.cssRules, sheet.href || "<inline stylesheet>");
-                } catch (error) {
-                    unreadableSheets.push(sheet.href || "<unknown stylesheet>");
-                }
-            }
-
-            for (const element of Array.from(document.querySelectorAll("[style]"))) {
-                const value = element.style.getPropertyValue("font-weight");
-                if (value) {
-                    violations.push({
-                        source: "<inline style>",
-                        selector: element.id
-                            ? `#${element.id}`
-                            : element.getAttribute("data-ps-name") || element.tagName.toLowerCase(),
-                        value,
-                    });
-                }
-            }
-
-            return { violations, unreadableSheets };
-        });
-
-        if (fontPolicy.violations.length) {
-            const detail = fontPolicy.violations
-                .slice(0, 20)
-                .map(item => `${item.source} :: ${item.selector} => font-weight: ${item.value}`)
-                .join("\n");
-            throw new Error(
-                "html-to-ps font policy violation: CSS font-weight is prohibited.\n" +
-                    "Select an explicit Bold/Heavy/Black/etc. font face through font-family.\n\n" +
-                    detail,
-            );
-        }
+        const protocolValidation = validateProtocol
+            ? await validateSpecializedPage(page, { rootSelector })
+            : { unreadableSheets: [] };
 
         const root = page.locator(rootSelector);
         await root.waitFor({ state: "visible" });
@@ -438,13 +390,6 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
         if (Math.abs(rootBox.width - 1500) > 1) {
             throw new Error(`${rootSelector} must be 1500 px wide for handoff; measured ${rootBox.width.toFixed(2)} px.`);
         }
-
-        const referencePath = path.resolve(outputDir, "reference.png");
-        await root.screenshot({
-            path: referencePath,
-            animations: "disabled",
-            caret: "hide",
-        });
 
         const scene = await page.evaluate(
             ({ rootSelector }) => {
@@ -786,6 +731,18 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                     return z * 1000000 + ++sequence;
                 }
 
+                function sourceTrace(el) {
+                    if (!el || !el.getAttribute) return null;
+                    const trace = {
+                        sourceId: el.getAttribute("data-ps-source-id") || null,
+                        origin: el.getAttribute("data-ps-origin") || null,
+                        generated: el.getAttribute("data-ps-generated") === "true",
+                        originPart: el.getAttribute("data-ps-origin-part") || null,
+                        rewrite: el.getAttribute("data-ps-rewrite") || null,
+                    };
+                    return Object.values(trace).some(value => value !== null && value !== false) ? trace : null;
+                }
+
                 function baseNodeFromBounds(el, type, name, style, box, locator = elementLocator(el)) {
                     const transform = transformInfo(style, el);
                     const domId = uid(el);
@@ -814,6 +771,7 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                         shape: null,
                         rasterPath: null,
                         fallbackReason: null,
+                        sourceTrace: sourceTrace(el),
                     };
                 }
 
@@ -858,6 +816,7 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                             shape: null,
                             rasterPath: null,
                             fallbackReason: null,
+                            sourceTrace: sourceTrace(el),
                         };
                     }
                     node.mode = "skipped";
@@ -902,6 +861,7 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
 
                     const node = baseNode(el, "shape", `${name} - Background`, style);
                     node.shape = {
+                        kind: "rectangle",
                         fill: background,
                         borderColor: null,
                         borderWidth: 0,
@@ -1069,6 +1029,7 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
 
                     const node = baseNode(el, "shape", nodeName(el, "Shape"), style);
                     node.shape = {
+                        kind: (el.getAttribute("data-ps-shape-kind") || "rectangle").trim().toLowerCase(),
                         fill: rgba(style.backgroundColor),
                         borderColor: rgba(style.borderTopColor),
                         borderWidth: num(style.borderTopWidth, 0),
@@ -1135,7 +1096,12 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                                 continue;
                             }
 
-                            if (role === "text" || shouldText(child)) {
+                            if (role === "text") {
+                                result.push(makeText(child, style));
+                                continue;
+                            }
+
+                            if (shouldText(child)) {
                                 const backdrop = makeBackdrop(child, style, nodeName(child, "Text"));
                                 if (backdrop) result.push(backdrop);
                                 result.push(makeText(child, style));
@@ -1229,7 +1195,7 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
                 }
 
                 return {
-                    version: "0.0.1",
+                    version: "0.1.0",
                     canvas: {
                         width: rootRect.width,
                         height: rootRect.height,
@@ -1243,9 +1209,9 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
             { rootSelector },
         );
 
-        if (fontPolicy.unreadableSheets.length) {
+        if (protocolValidation.unreadableSheets.length) {
             scene.warnings.push(
-                `Could not inspect font-weight declarations in ${fontPolicy.unreadableSheets.length} cross-origin stylesheet(s).`,
+                `Could not inspect font-weight declarations in ${protocolValidation.unreadableSheets.length} cross-origin stylesheet(s).`,
             );
         }
 
@@ -1379,9 +1345,8 @@ export async function extractScene({ input, outputDir, rootSelector = "#detail-p
             }
         }
 
-        scene.referenceImage = referencePath;
         return scene;
     } finally {
-        await browser.close();
+        if (browser) await browser.close();
     }
 }

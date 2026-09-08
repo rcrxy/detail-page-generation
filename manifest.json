@@ -1,7 +1,7 @@
 {
     "name": "taobao-detail-reference",
-    "variant": "html-to-ps-poc",
-    "html_to_ps_version": "0.0.1",
+    "variant": "html-to-ps-three-stage",
+    "html_to_ps_version": "0.1.0",
     "target": "Photoshop 2024",
     "resolution_ppi": 72,
     "canvas_width_px": 1500,
@@ -17,11 +17,21 @@
         "templates/product.yaml",
         "tools/html-to-ps/README.md",
         "tools/html-to-ps/example/assets/product-placeholder.png",
-        "tools/html-to-ps/example/index.html",
+        "tools/html-to-ps/example/source.html",
+        "tools/html-to-ps/example/specialized.html",
         "tools/html-to-ps/package.json",
         "tools/html-to-ps/scene-schema.json",
+        "tools/html-to-ps/src/browser.mjs",
         "tools/html-to-ps/src/build.mjs",
         "tools/html-to-ps/src/extract.mjs",
-        "tools/html-to-ps/src/generate-jsx.mjs"
+        "tools/html-to-ps/src/generate-jsx.mjs",
+        "tools/html-to-ps/src/protocol.mjs",
+        "tools/html-to-ps/src/visual-gate.mjs",
+        "tools/html-to-ps/test/build-visual-gate.mjs",
+        "tools/html-to-ps/test/node-failure-isolation.mjs",
+        "tools/html-to-ps/test/primitive-extraction.mjs",
+        "tools/html-to-ps/test/protocol-preflight.mjs",
+        "tools/html-to-ps/test/specialization-visual-gate.mjs",
+        "tools/html-to-ps/test/visual-fidelity.mjs"
     ]
 }

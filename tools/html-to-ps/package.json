@@ -1,16 +1,17 @@
 {
     "name": "html-to-ps-handoff",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "private": true,
     "type": "module",
-    "description": "One-time HTML/CSS to Photoshop ExtendScript handoff POC.",
+    "description": "Source-to-specialized Visual Gate and one-time Photoshop ExtendScript compiler.",
     "scripts": {
         "build": "node src/build.mjs",
-        "demo": "node src/build.mjs --input ./example/index.html --out ./example/output",
-        "check": "node --check src/build.mjs && node --check src/extract.mjs && node --check src/generate-jsx.mjs && node --check test/node-failure-isolation.mjs && node --check test/visual-fidelity.mjs",
-        "test": "node test/node-failure-isolation.mjs && node test/visual-fidelity.mjs"
+        "demo": "node src/build.mjs --source ./example/source.html --specialized ./example/specialized.html --out ./example/output",
+        "check": "node --check src/build.mjs && node --check src/browser.mjs && node --check src/protocol.mjs && node --check src/visual-gate.mjs && node --check src/extract.mjs && node --check src/generate-jsx.mjs && node --check test/protocol-preflight.mjs && node --check test/specialization-visual-gate.mjs && node --check test/build-visual-gate.mjs && node --check test/primitive-extraction.mjs && node --check test/node-failure-isolation.mjs && node --check test/visual-fidelity.mjs",
+        "test": "node test/protocol-preflight.mjs && node test/specialization-visual-gate.mjs && node test/build-visual-gate.mjs && node test/primitive-extraction.mjs && node test/node-failure-isolation.mjs && node test/visual-fidelity.mjs"
     },
     "dependencies": {
-        "playwright": "^1.55.0"
+        "playwright": "^1.55.0",
+        "pngjs": "^7.0.0"
     }
 }
