@@ -1,12 +1,12 @@
 ---
 name: detail-page-generation
 description: >
-  Create, refine, review, or hand off progressive visual-reference prototypes
-  for Taobao/e-commerce product detail pages from partial product information,
-  supplied image folders, and optional references. Use this skill for 1500 px
-  mobile-oriented HTML/CSS detail-page concepts, editable Photoshop handoff,
-  or auditing and improving the bundled html-to-ps conversion tool and its
-  boundaries.
+    Create, refine, review, or hand off progressive visual-reference prototypes
+    for Taobao/e-commerce product detail pages from partial product information,
+    supplied image folders, and optional references. Use this skill for 1500 px
+    mobile-oriented HTML/CSS detail-page concepts, editable Photoshop handoff,
+    or auditing and improving the bundled html-to-ps conversion tool and its
+    boundaries.
 ---
 
 # Taobao Detail Reference
@@ -309,6 +309,28 @@ requested.
 When the user asks for an **editable PSD handoff** of a finished design, use the
 optional `tools/html-to-ps` pipeline (see `references/html-to-ps.md`).
 
+Before starting conversion, always generate an independent
+Photoshop-specialized HTML file. Keep the approved source HTML unchanged. The
+specialized copy may add handoff semantics, embed its required CSS, and
+restructure selected visual parts into a clearer Photoshop layer model while
+preserving the approved browser result.
+
+Follow:
+
+- `references/specialized-html-protocol.md` for the specialized-file contract;
+- `references/ai-specialization-rewrites.md` for allowed AI rewrites and
+  preservation rules.
+
+Even when no structural rewrite is needed, create the independent specialized
+file and use it as the converter input. In that case the specialization may be
+limited to packaging, source traceability, layer naming, grouping, and role
+annotations.
+
+The specialized HTML is a generated handoff artifact, not a new design source.
+Regenerate or revalidate it when the approved source changes. Do not silently
+assume converter support for a protocol capability that the current tool README
+does not implement.
+
 Never reduce or change the visual design to make conversion easier; the pipeline
 degrades locally instead. Current conversion behavior and boundaries live in
 `tools/html-to-ps/README.md` and `tools/html-to-ps/scene-schema.json`; do not
@@ -321,12 +343,12 @@ problem:
 
 1. Read the tool's current known boundaries.
 2. Inspect the actual extractor and JSX generator code before accepting a
-  documented workaround as necessary.
+   documented workaround as necessary.
 3. Fix conversion behavior first in `tools/html-to-ps/src` whenever practical.
 4. Update the scene schema and tool README to match the implemented behavior.
 5. Update other reference files only when their stable handoff guidance changed.
 6. Change this `SKILL.md` last, and only for stable workflow or target
-  conditions rather than temporary converter limitations.
+   conditions rather than temporary converter limitations.
 
 Do not solve a conversion defect by adding a new authoring prohibition unless
 it is an unavoidable target condition. Prefer native editable reconstruction,

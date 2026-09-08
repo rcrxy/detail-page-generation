@@ -9,9 +9,11 @@ Its job is **handoff**, not redesign.
 
 ```text
 AI design
-  -> HTML/CSS
-  -> browser render/review
+  -> source HTML/CSS
+  -> source browser render/review
   -> design freeze
+  -> AI-generated Photoshop-specialized HTML
+  -> specialized browser comparison
   -> html-to-ps
   -> one-time JSX
   -> Photoshop 2024
@@ -23,6 +25,36 @@ assets, or simplify the composition merely to make conversion easier.
 
 If a visual feature is difficult to reconstruct natively, the converter should
 degrade locally rather than change the approved design.
+
+## Specialized HTML stage
+
+Conversion must use an independent Photoshop-specialized HTML file rather than
+the approved source file directly.
+
+The specialized file is allowed to:
+
+- add layer names, groups, roles, source mapping, and fallback hints;
+- embed the CSS required by the current extractor;
+- materialize browser-only visuals such as simple pseudo-elements;
+- split a browser box into meaningful Photoshop parts such as background,
+  border, content, and decoration;
+- remove or reorganize layout-only wrappers when the browser result remains
+  unchanged;
+- isolate the smallest unsupported visual for rendered fallback.
+
+It must not alter the approved content or visual design. The source HTML remains
+the design source of truth, and the specialized file is regenerated or
+revalidated after relevant source changes.
+
+Read these documents before creating the specialized file:
+
+- `specialized-html-protocol.md` defines the file and converter contract;
+- `ai-specialization-rewrites.md` defines the allowed AI rewrite checklist.
+
+The specialized file must declare capabilities that it requires from the
+converter. A rewrite must not be described as editable when the current tool
+does not yet implement the corresponding capability. Unsupported features keep
+the smallest faithful local fallback until native reconstruction exists.
 
 ## Target
 
@@ -91,10 +123,11 @@ result rather than require Photoshop equivalents or restrict the composition.
 Scene fields and Photoshop reconstruction details are defined by
 `tools/html-to-ps/scene-schema.json` and `tools/html-to-ps/README.md`.
 
-## Optional semantic hints
+## Semantic hints
 
-The design is not required to use these attributes, but they improve layer
-naming and conversion clarity without constraining the visual layout.
+The source design is not required to use handoff attributes. The generated
+specialized HTML should add them where they clarify the intended Photoshop
+layer structure without changing the visual layout.
 
 ```html
 <section data-ps-group="03-鞋底卖点">
@@ -121,10 +154,11 @@ Supported hints in the POC:
 - `data-ps-text-mode="point|paragraph"`
 
 These attributes are optional handoff hints, not a required authoring grammar.
-Use them only when the desired Photoshop layer structure cannot be inferred
-from the rendered element. `data-ps-flatten` explicitly chooses one local
-rendered Smart Object; it must not be added merely to compensate for a
-converter defect that can be fixed in the tool.
+They are optional in the source HTML and selectively generated in the
+specialized HTML. Use them only when they communicate useful handoff intent.
+`data-ps-flatten` explicitly chooses one local rendered Smart Object; it must
+not be added merely to compensate for a converter defect that can be fixed in
+the tool.
 
 ## Conversion philosophy
 
